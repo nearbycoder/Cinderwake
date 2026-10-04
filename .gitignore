@@ -1,0 +1,5 @@
+/target
+/captures/
+.DS_Store
+
+/dist
