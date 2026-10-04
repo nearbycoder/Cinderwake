@@ -17,9 +17,11 @@ Climb the ruined city. Descend beneath it. Silence the Brass Regent.
 
 </div>
 
-[![Cinderwake gameplay preview: climbing and descending the city's three elevations](docs/media/demo.gif)](docs/media/cinderwake-demo.mp4)
+<p align="center">
+  <a href="https://github.com/nearbycoder/Cinderwake/raw/refs/heads/main/docs/media/cinderwake-demo.mp4"><img src="docs/media/demo.gif" alt="Cinderwake gameplay preview: climbing and descending the city's three elevations" width="560"></a>
+</p>
 
-<p align="center"><strong><a href="docs/media/cinderwake-demo.mp4">▶ Watch the full demo</a></strong></p>
+<p align="center"><strong><a href="https://github.com/nearbycoder/Cinderwake/raw/refs/heads/main/docs/media/cinderwake-demo.mp4">Download the full gameplay demo · MP4 · 40 seconds</a></strong></p>
 
 The **40-second demo** opens with 15 seconds of scripted combat using live physics, followed by a full vertical traversal. The traversal segment disables enemies and hazards so the route is visible; normal play includes both. The preview above is a navigation excerpt. The edit uses Cinderwake's original ambient music; see [capture details](docs/media/README.md).
 
