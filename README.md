@@ -11,7 +11,7 @@ Climb the ruined city. Descend beneath it. Silence the Brass Regent.
 [![Macroquad](https://img.shields.io/badge/Macroquad-0.4-4d9c96?style=flat-square)](https://macroquad.rs/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-d6ae67?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-playable%20prototype-747b98?style=flat-square)](#project-status)
-[![Rust checks](https://github.com/nearbycoder/Cinderwake/actions/workflows/ci.yml/badge.svg)](https://github.com/nearbycoder/Cinderwake/actions/workflows/ci.yml)
+[![Rust checks](https://github.com/nearbycoder/Cinderwake/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nearbycoder/Cinderwake/actions/workflows/ci.yml)
 
 [Play](#play) · [Explore the city](#a-city-with-depth) · [Controls](#controls) · [Engine notes](docs/ENGINE.md)
 
