@@ -72,10 +72,7 @@ impl Animator {
         }
     }
     pub fn update(&mut self, p: &Player, screen: Screen, dt: f32) {
-        if matches!(
-            screen,
-            Screen::Paused | Screen::Scroll | Screen::Camp | Screen::Victory
-        ) {
+        if screen.freezes_world() || screen == Screen::Victory {
             return;
         }
         // The renderer survives a new run, unlike Player. Transient reactions

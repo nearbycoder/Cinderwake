@@ -211,7 +211,13 @@ impl Art {
         }
         let frozen = matches!(
             game.screen,
-            Screen::Paused | Screen::Scroll | Screen::Camp | Screen::Dead | Screen::Victory
+            Screen::Paused
+                | Screen::Scroll
+                | Screen::Camp
+                | Screen::Options
+                | Screen::Reliquary
+                | Screen::Dead
+                | Screen::Victory
         ) || game.hitstop > 0.;
         let dt = if frozen { 0. } else { dt };
         self.animator.update(&game.player, game.screen, dt);

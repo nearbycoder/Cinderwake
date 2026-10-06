@@ -112,7 +112,7 @@ flowchart LR
     R --> V[Final bellgate]
 ```
 
-1. **Explore and equip.** Chests immediately replace your melee weapon with an upgraded random weapon. Memories raise Ferocity, Ingenuity, or Resolve. Wells restore health and flasks; forges temper your weapon for copper.
+1. **Explore and equip.** Chests raise your weapon tier and offer a random weapon: take it or keep the one in hand (**1** / **2**). Memories raise Ferocity, Ingenuity, or Resolve. Wells restore health and flasks; forges temper your weapon for copper.
 2. **Reach a bellgate.** Carried embers are banked when you leave a biome. At the Keeper's rest, spend them on permanent vitality, flask capacity, or a mutation for the current run.
 3. **Choose your branch.** Take the Conservatory or the Foundry, then continue to the Crown.
 4. **Defeat the Regent.** The boss unlocks the Crown Rune; the final gate completes the run. A brute and an archer guard the gallery on the way to the Regent. Enemies grow tougher with each stage of a run, and later runs also scale enemy health with recorded victories.
@@ -144,7 +144,7 @@ Move that file aside to reset progression. Options are saved next to it in `sett
 | **Q** / **R** | Throw fire vessel / place arc snare |
 | **F** | Drink a flask; damage interrupts healing |
 | **E** | Interact |
-| **1 / 2 / 3** | Choose a memory or Keeper upgrade |
+| **1 / 2 / 3** | Choose a memory, reliquary weapon, or Keeper upgrade |
 | **Enter** | Start, continue, or restart |
 | **Tab** | Show the vertical atlas |
 | **Escape** | Pause and controls |

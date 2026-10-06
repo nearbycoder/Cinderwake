@@ -385,6 +385,7 @@ impl Ui {
             g.screen,
             Screen::Paused
                 | Screen::Scroll
+                | Screen::Reliquary
                 | Screen::Camp
                 | Screen::Dead
                 | Screen::Victory
@@ -394,6 +395,7 @@ impl Ui {
             match g.screen {
                 Screen::Paused => self.paused(g),
                 Screen::Scroll => self.disciplines(),
+                Screen::Reliquary => self.reliquary(g),
                 Screen::Camp => self.camp(g),
                 Screen::Dead | Screen::Victory => self.result(g),
                 Screen::Options => self.options(g),
@@ -508,6 +510,51 @@ impl Ui {
             14.,
             c(MUTED),
         );
+    }
+    fn reliquary(&self, g: &Game) {
+        let Some(found) = g.offer else { return };
+        let p = &g.player;
+        self.skin.crest(Rect::new(593., 111., 94., 71.));
+        self.heading("A reliquary opens", 640., 227., 43.);
+        self.center(
+            &format!(
+                "Either weapon is tempered to tier {}. Which will you carry?",
+                p.tier
+            ),
+            262.,
+            18.,
+            c(PALE),
+        );
+        for (i, (weapon, verb)) in [(found, "TAKE"), (p.weapon, "KEEP")]
+            .into_iter()
+            .enumerate()
+        {
+            let x = 290. + i as f32 * 370.;
+            let icon = match weapon {
+                Weapon::Sabre => 0,
+                Weapon::Glaive => 1,
+                Weapon::Hammer => 2,
+            };
+            self.skin.panel(Rect::new(x, 300., 330., 280.));
+            self.skin
+                .icon(icon, Rect::new(x + 128., 320., 74., 74.), 1.);
+            self.centered_at(weapon.name(), x + 165., 424., 21., c(GOLD));
+            self.centered_at(weapon.summary(), x + 165., 450., 16., c(MUTED));
+            self.centered_at(
+                &format!(
+                    "{:.0} damage   {:.0} reach   {:.2}s swing",
+                    p.damage_with(weapon),
+                    weapon.reach(),
+                    weapon.delay()
+                ),
+                x + 165.,
+                482.,
+                16.,
+                c(PALE),
+            );
+            self.skin.plaque(Rect::new(x + 90., 515., 150., 40.));
+            self.centered_at(&format!("{}  {verb}", i + 1), x + 165., 541., 17., c(TEAL));
+        }
     }
     fn disciplines(&self) {
         self.skin.crest(Rect::new(593., 111., 94., 71.));

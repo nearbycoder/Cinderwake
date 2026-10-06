@@ -91,6 +91,13 @@ fn menus(g: &mut Game) {
                 g.start();
             }
         }
+        Screen::Reliquary => {
+            if is_key_pressed(KeyCode::Key1) {
+                g.choose_weapon(true);
+            } else if is_key_pressed(KeyCode::Key2) {
+                g.choose_weapon(false);
+            }
+        }
         Screen::Scroll => {
             for (i, k) in [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3]
                 .iter()
@@ -157,7 +164,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 14] = [
+const UI_GALLERY_NAMES: [&str; 15] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -172,6 +179,7 @@ const UI_GALLERY_NAMES: [&str; 14] = [
     "ui-11-options",
     "ui-12-paused-abandon",
     "ui-13-tip",
+    "ui-14-reliquary",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -260,6 +268,11 @@ fn ui_fixture(index: usize) -> Game {
             g.request_abandon();
         }
         13 => g.hint = Some((Hint::Parry, HINT_SECONDS)),
+        14 => {
+            g.screen = Screen::Reliquary;
+            g.offer = Some(Weapon::Hammer);
+            g.player.tier = 3;
+        }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
     g
@@ -476,6 +489,9 @@ async fn main() {
             if g.screen == Screen::Scroll {
                 g.upgrade(0);
             }
+            if g.screen == Screen::Reliquary {
+                g.choose_weapon(true);
+            }
             if g.screen == Screen::Camp {
                 g.travel();
             }
@@ -490,10 +506,7 @@ async fn main() {
         input.trap |= pending.trap;
         input.heal |= pending.heal;
         input.interact |= pending.interact;
-        let paused = matches!(
-            g.screen,
-            Screen::Paused | Screen::Scroll | Screen::Camp | Screen::Options
-        );
+        let paused = g.screen.freezes_world();
         let frame_dt = if demo || environment_tour {
             1. / 60.
         } else {

@@ -65,7 +65,7 @@ The atlas is a full survey showing platforms, objects, guardians, hazards, bellg
 
 ## Combat and progression
 
-- **Weapons:** sabre, glaive, and hammer have different damage, reach, and delays. They share the hero's blade artwork. Chests choose a replacement weapon and increase its tier; the forge spends copper to increase the tier.
+- **Weapons:** sabre, glaive, and hammer have different damage, reach, and delays. They share the hero's blade artwork. Chests increase the tier and roll a weapon. If it differs from the one in hand, the world pauses on a reliquary choice showing each weapon's per-strike damage at the new tier, reach, and swing time: **1** takes it, **2** keeps the current weapon. The forge spends copper to increase the tier.
 - **Actions:** three-hit melee combo, glassbolts, directional parry and projectile reflection, dodge invulnerability, explosive fire vessels, damaging arc snares, and ground slam.
 - **Poise:** wardens, archers, and brutes are not staggered or pushed back by light hits (ordinary strikes and glassbolts), which still deal damage. Heavy hits (the second blow of each combo, slams, fire vessels, arc snares, parries, and reflected bolts) stagger and push them. Moths and the Regent react to every hit as before. A light hit landing on a guardian that is winding up shows a steel-coloured damage number: the strike is still coming, so dodge or parry. Before this change, every hit staggered and pushed guardians, so holding attack kept a single warden or brute out of reach indefinitely.
 - **Enemies:** wardens, archers, moths, brutes, and the Brass Regent. Behavior includes attack windups, stagger, burn damage, and boss melee/projectile patterns. Before the Regent's arena, the Crown's upper gallery is guarded by an archer and a brute, with a moth over the arena gate.
@@ -124,7 +124,7 @@ The HUD is drawn after the world effects. Shader compilation failure falls back 
 
 ### Interface and sound
 
-Generated frame, icon, and crest atlases provide nine-slice panels, gauges, equipment slots, and plaques around live game state. The UI covers title, combat HUD, map, low health, cooldowns, pause, memory selection, Keeper purchases/routes, death, victory, and boss health.
+Generated frame, icon, and crest atlases provide nine-slice panels, gauges, equipment slots, and plaques around live game state. The UI covers title, combat HUD, map, low health, cooldowns, pause, memory selection, reliquary choices, Keeper purchases/routes, death, victory, and boss health.
 
 Original synthesized ambient music and nine effects are embedded with the artwork, font, and shaders. Regenerate audio with `python3 scripts/synthesize.py`. The soundtrack is a prototype soundscape, not a finished production score.
 
@@ -182,7 +182,7 @@ Run capture commands from the repository root. Outputs are written beneath `capt
 | `--demo` | Continuous scripted practice play | Runs until closed |
 | `--gallery` | Four staged biome views | `captures/biome-0.png` through `biome-3.png` |
 | `--sprite-preview` | Eight hero animation panels | `captures/animation-preview.png` |
-| `--ui-gallery` | Fourteen frozen, fixed-seed interface fixtures, including the options page, abandon confirmation, and a tip banner | `captures/ui-*.png` |
+| `--ui-gallery` | Fifteen frozen, fixed-seed interface fixtures, including the options page, abandon confirmation, a tip banner, and a reliquary choice | `captures/ui-*.png` |
 | `--environment-tour` | 24 seconds of camera traversal across all four biomes | 480 PNGs at 20 fps in `captures/tour/` |
 | `--motion-capture` | 15 seconds of scripted input with live physics and combat | 300 PNGs at 20 fps in `captures/motion/` |
 | `--vertical-capture` | A complete fixed-seed Aqueduct route through all elevations | 20 PNGs per simulated second in `captures/vertical/`; about 25 seconds |

@@ -29,6 +29,8 @@ pub enum Screen {
     Scroll,
     Camp,
     Options,
+    /// Choosing between a reliquary's weapon and the one in hand.
+    Reliquary,
     Dead,
     Victory,
 }
@@ -67,6 +69,15 @@ impl Hint {
     }
 }
 pub const HINT_SECONDS: f32 = 6.;
+impl Screen {
+    /// Menus that hold the world still and discard gameplay input.
+    pub fn freezes_world(self) -> bool {
+        matches!(
+            self,
+            Self::Paused | Self::Scroll | Self::Camp | Self::Options | Self::Reliquary
+        )
+    }
+}
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Weapon {
     Sabre,
@@ -93,6 +104,13 @@ impl Weapon {
             Self::Sabre => 48.,
             Self::Glaive => 72.,
             Self::Hammer => 49.,
+        }
+    }
+    pub fn summary(self) -> &'static str {
+        match self {
+            Self::Sabre => "Quick, close cuts",
+            Self::Glaive => "Long reach, measured swings",
+            Self::Hammer => "Crushing, slow blows",
         }
     }
     pub fn delay(self) -> f32 {
@@ -179,7 +197,11 @@ impl Player {
         Rect::new(self.pos.x - 7., self.pos.y - 28., 14., 28.)
     }
     pub fn damage(&self) -> f32 {
-        self.weapon.damage() * (1. + self.power[0] as f32 * 0.17 + self.tier as f32 * 0.09)
+        self.damage_with(self.weapon)
+    }
+    /// Per-strike damage this build would deal with `weapon` at its tier.
+    pub fn damage_with(&self, weapon: Weapon) -> f32 {
+        weapon.damage() * (1. + self.power[0] as f32 * 0.17 + self.tier as f32 * 0.09)
     }
 }
 #[derive(Clone)]
@@ -245,6 +267,8 @@ pub struct Game {
     /// Screen to return to when the options page closes.
     pub options_from: Screen,
     pub options_row: usize,
+    /// The weapon a reliquary offers while its choice is open.
+    pub offer: Option<Weapon>,
     /// The first abandon request from the pause screen only asks for confirmation.
     pub abandon_armed: bool,
     /// Contextual tips run only in normal play, never in practice or captures.
@@ -360,6 +384,7 @@ impl Game {
             settings: Settings::default(),
             options_from: Screen::Title,
             options_row: 0,
+            offer: None,
             abandon_armed: false,
             teach: false,
             hint: None,
@@ -599,10 +624,7 @@ impl Game {
         }
     }
     pub fn tick(&mut self, dt: f32, input: Input) {
-        if matches!(
-            self.screen,
-            Screen::Paused | Screen::Scroll | Screen::Camp | Screen::Options
-        ) {
+        if self.screen.freezes_world() {
             return;
         }
         self.time += dt;
@@ -1231,17 +1253,19 @@ impl Game {
         let pos = self.level.objects[i].pos;
         match kind {
             ObjectKind::Chest => {
-                self.player.weapon = match self.rng.range(0, 3) {
+                let found = match self.rng.range(0, 3) {
                     0 => Weapon::Sabre,
                     1 => Weapon::Glaive,
                     _ => Weapon::Hammer,
                 };
+                // The tier rises either way; a different weapon is a choice.
                 self.player.tier += 1;
-                self.notify(&format!(
-                    "{} +{}  /  Scorching edge",
-                    self.player.weapon.name(),
-                    self.player.tier
-                ));
+                if found == self.player.weapon {
+                    self.notify_weapon();
+                } else {
+                    self.offer = Some(found);
+                    self.screen = Screen::Reliquary;
+                }
             }
             ObjectKind::Scroll => {
                 self.screen = Screen::Scroll;
@@ -1304,6 +1328,25 @@ impl Game {
         self.level.objects[i].used = true;
         self.sounds.push(Sfx::Loot);
         self.effect(Effect::Loot, pos - vec2(0., 15.), 0.);
+    }
+    fn notify_weapon(&mut self) {
+        self.notify(&format!(
+            "{} +{}  /  Scorching edge",
+            self.player.weapon.name(),
+            self.player.tier
+        ));
+    }
+    /// Resolves an open reliquary: take the offered weapon or keep the
+    /// current one, both at the raised tier.
+    pub fn choose_weapon(&mut self, take: bool) {
+        let Some(found) = self.offer.take() else {
+            return;
+        };
+        if take {
+            self.player.weapon = found;
+        }
+        self.screen = Screen::Playing;
+        self.notify_weapon();
     }
     pub fn upgrade(&mut self, choice: usize) {
         self.player.power[choice] += 1;
@@ -2048,6 +2091,54 @@ mod tests {
             5,
             "Regent, two gallery guards, a moth, a warden"
         );
+    }
+    /// Opens the level's first reliquary holding `weapon`, with a fixed seed.
+    fn open_reliquary(weapon: Weapon) -> Game {
+        let mut g = game();
+        g.player.weapon = weapon;
+        let chest = g
+            .level
+            .objects
+            .iter()
+            .find(|o| o.kind == ObjectKind::Chest)
+            .unwrap()
+            .pos;
+        g.player.pos = chest;
+        g.tick(
+            STEP,
+            Input {
+                interact: true,
+                ..Default::default()
+            },
+        );
+        g
+    }
+    #[test]
+    fn reliquaries_offer_a_choice_unless_they_hold_your_weapon() {
+        let weapons = [Weapon::Sabre, Weapon::Glaive, Weapon::Hammer];
+        let opened: Vec<_> = weapons.iter().map(|w| open_reliquary(*w)).collect();
+        // The same seed rolls the same weapon: one build already holds it.
+        let direct: Vec<_> = opened.iter().filter(|g| g.offer.is_none()).collect();
+        assert_eq!(direct.len(), 1);
+        assert_eq!(direct[0].screen, Screen::Playing);
+        assert_eq!(direct[0].player.tier, 2);
+        for (held, g) in weapons.iter().zip(&opened) {
+            let Some(found) = g.offer else { continue };
+            assert_ne!(found, *held);
+            assert_eq!(g.screen, Screen::Reliquary);
+            assert_eq!(g.player.tier, 2, "the tier rises before the choice");
+            for take in [true, false] {
+                let mut g = open_reliquary(*held);
+                let before = g.player.pos;
+                g.tick(STEP, Input::default());
+                assert_eq!(g.player.pos, before, "the choice holds the world still");
+                g.choose_weapon(take);
+                assert_eq!(g.player.weapon, if take { found } else { *held });
+                assert_eq!(g.player.tier, 2);
+                assert_eq!(g.screen, Screen::Playing);
+                assert!(g.offer.is_none());
+            }
+        }
     }
     #[test]
     fn death_loses_unbanked_embers_only() {
