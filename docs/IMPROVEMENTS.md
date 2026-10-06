@@ -161,3 +161,38 @@ Findings for a later round:
 - Scripting a route through a level from outside the game is unreliable. A debug flag that starts at a chosen object would make end-to-end checks of chests and other interactions practical.
 
 Still deferred: audio depth (13), new content (14), and a smaller web download (15). Gamepad support, web hosting, shrinking the art, and licenses remain owner decisions.
+
+## Round 3 scope
+
+Four items, plus one stretch item. The launch flag comes first because the later items and the round-2 reliquary check depend on it. The riskiest item, continuing a run, comes last. Each item gets the usual checks: `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, `cargo test --locked`, the capture modes, and screenshots in [`media/improvements/round3/`](media/improvements/round3/). Every native run uses a temporary `XDG_DATA_HOME`, and the real save folder is checked before and after.
+
+A review of the audio found a defect that moves item 13 up the list. The only music track is a 16-second loop that fades out over its last half second and back in over its first, so the score drops to silence every 16 seconds. It's also the only track, so every biome, the title, and the Keeper sound the same, and kills, glassbolts, thrown tools, banking, and menu choices make no sound at all.
+
+### A. Start next to a chosen object (round-2 finding)
+
+- **Acceptance:** `--start-at <target>` on the desktop and `?start=<target>` in the browser build start a run beside a chosen object: `chest`, `memory`, `well`, `forge`, `cache`, `gate`, `keeper` (the Keeper screen after the first stage), or `regent` (the Crown, just before the arena). It uses the practice seed and isolation: no progress or settings are read or written, and no tips are shown. Guardians close to the start point are removed, so the object can be used straight away. An unknown target prints the valid list and exits on the desktop; in the browser it's ignored. ENGINE.md documents it as a testing tool.
+- **Verify:** a unit test for every target checks that the object is within reach on a real support, or that the right screen is open. In the browser build, real key presses at `?start=chest` open the reliquary, and **1** and **2** each work. That closes the check round 2 couldn't do. A native run confirms nothing is written to the data directory.
+
+### B. A score for each biome, with seamless loops (item 13)
+
+- **Acceptance:** `scripts/synthesize.py` renders five original loops: a hearth theme (title, Keeper, death, and victory), the Aqueduct, the Conservatory, the Foundry, and the Crown. Each loop wraps without a fade, so the last notes ring into the start. The game crossfades over about 1.5 s when the scene changes, and the music volume and mute options still apply. The script checks every loop: no clipping, a small jump at the seam, and loudness near the seam within 2 dB of the whole track. The README and ENGINE.md give the download-size cost.
+- **Verify:** unit tests for which track plays on each screen and biome and for the crossfade envelope; the script's own loop checks; spectrogram images of the old and new seams; the browser build loads and starts audio after a key press with no console errors. **Nobody will listen to it on this machine**, so how good it sounds is for the owner to judge.
+
+### C. Sound for silent actions (item 13)
+
+- **Acceptance:** new synthesized effects for a guardian's death, glassbolt fire, throwing a fire vessel or arc snare, banking at a bellgate or buying from the Keeper, menu choices (memory, reliquary, Keeper route, options changes), and a heavier sound for the combo finisher. The volume and mute options apply to all of them. Each effect has a matching embedded file, and the build fails if they don't line up.
+- **Verify:** game tests showing that each event queues its cue exactly once, a count check between cues and files, the script's clipping check, and spectrograms. As with B, nobody will listen to them here.
+
+### D. Continue a run after quitting
+
+At the moment, closing the game or browser tab partway through a run loses the whole run. That costs the most in the browser build, where a tab is easy to close.
+
+- **Acceptance:** arriving in a new biome or reaching the Keeper saves a checkpoint (`run.json`, or `cinderwake/run.json` in browser storage) with the run's seed, stage, biome, weapon, tier, memories, copper, mutation, vitality, kills, and time. If a checkpoint exists, the title screen offers **Enter** to continue (naming the biome) and **N** to start a new run. Continuing restores the run at the start of that biome, or at the Keeper. Embers carried since the last bellgate are lost, as on death, and continuing doesn't count as a new descent. Death, victory, abandoning, and starting a new run all delete the checkpoint. Practice and capture modes never touch it. An unreadable checkpoint is ignored.
+- **Verify:** unit tests for the round trip (travel, checkpoint, restore, same level and build), deletion on death, victory, abandon, and new run, and tolerance of a corrupt file; a `--ui-gallery` fixture for the title with a run to continue; in the browser build, real keys reach the Keeper (using `?start=gate`), then a reload offers to continue and continuing restores it.
+
+### E. Stretch: remember fullscreen
+
+- **Acceptance:** a **Fullscreen** row on the options page, kept in sync with F11 and saved; the desktop game starts fullscreen if it was saved that way.
+- **Verify:** settings tests and the options gallery fixture; a native launch with fullscreen saved. This item ships only if A–D are done.
+
+Owner decisions still open, and not part of this round: gamepad support, web hosting, shrinking the art, licenses, and guardian health.
