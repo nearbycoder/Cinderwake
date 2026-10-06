@@ -50,7 +50,7 @@ impl EnemyKind {
 /// Enemy strength for one stage of a run. Guardians gain 45% health and 30%
 /// damage per stage, keeping pace with the gear a run collects; recorded
 /// victories add 12% health each. The Regent, already tuned as the final
-/// fight, takes a gentler 30% health and 10% damage per stage.
+/// fight, takes a gentler 30% health and 5% damage per stage.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Threat {
     pub stage: u32,
@@ -69,7 +69,7 @@ impl Threat {
         (1. + self.stage as f32 * per_stage) * (1. + self.wins as f32 * 0.12)
     }
     pub fn damage(self, kind: EnemyKind) -> f32 {
-        let per_stage = if kind == EnemyKind::Regent { 0.1 } else { 0.3 };
+        let per_stage = if kind == EnemyKind::Regent { 0.05 } else { 0.3 };
         1. + self.stage as f32 * per_stage
     }
 }

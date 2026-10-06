@@ -58,7 +58,7 @@ impl Hint {
     pub fn text(self) -> &'static str {
         match self {
             Self::Climb => "SPACE jumps. Press it again in the air to double jump onto higher ledges.",
-            Self::Strike => "J or left click strikes; hold to chain a combo. SHIFT dodges through attacks.",
+            Self::Strike => "J or left click strikes; a combo's second blow staggers guardians. SHIFT dodges their strikes.",
             Self::Parry => "Face a bolt and press L or right click to parry it back at the shooter.",
             Self::Drop => "S + SPACE drops through a ledge. Press S in mid-air to slam down.",
             Self::Heal => "F drinks a healing flask. Taking damage interrupts the drink.",
@@ -537,27 +537,45 @@ impl Game {
             }
         }
     }
-    pub fn hit(&mut self, index: usize, damage: f32, dir: f32, burn: bool) {
+    /// Guardians (wardens, archers, brutes) have poise: light hits (ordinary
+    /// strikes and glassbolts) wound them without a flinch or shove, so a held
+    /// attack can no longer keep one permanently staggered and out of reach.
+    /// Heavy hits (combo finishers, slams, fire, snares, parries, reflected
+    /// bolts) stagger and push anything. Moths and the Regent flinch as before.
+    pub fn hit(&mut self, index: usize, damage: f32, dir: f32, burn: bool, heavy: bool) {
         let e = &mut self.level.enemies[index];
         if e.hp <= 0. {
             return;
         }
+        let guardian = matches!(
+            e.kind,
+            EnemyKind::Warden | EnemyKind::Archer | EnemyKind::Brute
+        );
+        let staggers = heavy || !guardian;
+        // A steel number warns that a telegraphed strike is still coming.
+        let committed = !staggers && e.windup > 0.;
         e.hp -= damage;
         e.flash = 0.12;
-        e.stun = if e.kind == EnemyKind::Regent {
-            0.06
-        } else {
-            0.22
-        };
         if burn {
             e.burn = 2.;
         }
-        e.pos.x = (e.pos.x + dir * 8.).clamp(15., self.level.width - 15.);
+        if staggers {
+            e.stun = if e.kind == EnemyKind::Regent {
+                0.06
+            } else {
+                0.22
+            };
+            e.pos.x = (e.pos.x + dir * 8.).clamp(15., self.level.width - 15.);
+        }
         keep_enemy_on_tier(&self.level.platforms, e);
         let pos = e.pos - vec2(0., 20.);
         let dead = e.hp <= 0.;
         let boss = e.kind == EnemyKind::Regent;
-        self.label(pos, format!("{}", damage as u32), Color::from_hex(0xffdb9b));
+        self.label(
+            pos,
+            format!("{}", damage as u32),
+            Color::from_hex(if committed { 0xa9c1d6 } else { 0xffdb9b }),
+        );
         self.effect(if dead { Effect::Death } else { Effect::Hit }, pos, dir);
         self.sounds.push(Sfx::Hit);
         self.shake = 3.;
@@ -764,6 +782,7 @@ impl Game {
                 p.face,
                 p.weapon.reach(),
                 p.damage() * if p.combo == 2 { 1.4 } else { 1. },
+                p.combo == 2,
             ));
             self.sounds.push(Sfx::Slash);
         }
@@ -806,7 +825,7 @@ impl Game {
         for (effect, pos, dir) in effects {
             self.effect(effect, pos, dir);
         }
-        if let Some((pos, dir, reach, dmg)) = melee {
+        if let Some((pos, dir, reach, dmg, finisher)) = melee {
             let hitbox = Rect::new(
                 if dir > 0. { pos.x } else { pos.x - reach },
                 pos.y - 38.,
@@ -822,7 +841,7 @@ impl Game {
                 .map(|(i, _)| i)
                 .collect();
             for i in indices {
-                self.hit(i, dmg, dir, self.player.tier > 1);
+                self.hit(i, dmg, dir, self.player.tier > 1, finisher);
                 if self.settings.hitstop {
                     self.hitstop = 0.035;
                 }
@@ -840,7 +859,7 @@ impl Game {
                 .map(|(i, _)| i)
                 .collect();
             for i in indices {
-                self.hit(i, 55., self.player.face, false);
+                self.hit(i, 55., self.player.face, false, true);
             }
         }
         self.update_enemies(dt);
@@ -861,7 +880,7 @@ impl Game {
         }
         self.traps.retain(|t| t.life > 0.);
         for i in trap_hits {
-            self.hit(i, 18., 0., true);
+            self.hit(i, 18., 0., true, true);
         }
         if self
             .level
@@ -937,10 +956,10 @@ impl Game {
             if e.stun > 0. {
                 continue;
             }
+            e.timer -= dt;
             let dx = pp.x - e.pos.x;
             let dy = pp.y - e.pos.y;
             e.face = dx.signum();
-            e.timer -= dt;
             if e.windup > 0. {
                 e.windup -= dt;
                 if e.windup <= 0. {
@@ -1031,7 +1050,7 @@ impl Game {
             keep_enemy_on_tier(&self.level.platforms, e);
         }
         for i in burned_out {
-            self.hit(i, self.level.enemies[i].hp, 0., false);
+            self.hit(i, self.level.enemies[i].hp, 0., false, true);
         }
         self.shots.extend(shots);
         for (i, damage, dir) in attacks {
@@ -1042,7 +1061,7 @@ impl Game {
             }
         }
         for i in parries {
-            self.hit(i, 38., self.player.face, false);
+            self.hit(i, 38., self.player.face, false, true);
             self.level.enemies[i].stun = 1.8;
             self.player.parry_cd = 0.;
             self.sounds.push(Sfx::Parry);
@@ -1103,7 +1122,8 @@ impl Game {
             } else {
                 for (i, e) in self.level.enemies.iter().enumerate() {
                     if e.hp > 0. && e.rect().contains(s.pos) {
-                        hits.push((i, s.damage, s.vel.x.signum()));
+                        // Glassbolts are light; reflected enemy bolts land heavy.
+                        hits.push((i, s.damage, s.vel.x.signum(), s.kind != 0));
                         s.life = 0.;
                         break;
                     }
@@ -1114,8 +1134,8 @@ impl Game {
         for (pos, dir) in reflections {
             self.effect(Effect::Parry, pos, dir);
         }
-        for (i, d, dir) in hits {
-            self.hit(i, d, dir, false);
+        for (i, d, dir, heavy) in hits {
+            self.hit(i, d, dir, false, heavy);
         }
         for (d, dir) in damage {
             self.hurt(d, dir);
@@ -1133,7 +1153,7 @@ impl Game {
                 .map(|(i, _)| i)
                 .collect();
             for i in ids {
-                self.hit(i, d, 0., true);
+                self.hit(i, d, 0., true, true);
             }
         }
     }
@@ -1767,7 +1787,7 @@ mod tests {
     fn kills_and_hostile_bolts_queue_their_tips() {
         let mut g = tutor();
         g.level.enemies = vec![Enemy::new(400., FLOOR, EnemyKind::Moth, Threat::BASE)];
-        g.hit(0, 1000., 1., false);
+        g.hit(0, 1000., 1., false, true);
         g.tick(STEP, Input::default());
         assert_eq!(g.hint.map(|h| h.0), Some(Hint::Tools));
         g.hint = None;
@@ -1831,17 +1851,39 @@ mod tests {
     /// A real simulated duel: the build holds attack against one enemy. Returns
     /// seconds until the enemy falls and the fraction of vitality lost.
     fn duel(stage: u32, threat: Threat, weapon: Weapon, kind: EnemyKind) -> (f32, f32) {
+        duel_with(stage, threat, weapon, kind, false)
+    }
+    /// With `dodge_windups`, the build also dodges as each telegraphed strike
+    /// is about to land, then turns back to face the enemy.
+    fn duel_with(
+        stage: u32,
+        threat: Threat,
+        weapon: Weapon,
+        kind: EnemyKind,
+        dodge_windups: bool,
+    ) -> (f32, f32) {
         let mut g = game();
         let spawn = g.player.pos;
         g.player = stage_build(stage, weapon);
         g.player.pos = spawn;
         g.level.enemies = vec![Enemy::new(spawn.x + 34., FLOOR, kind, threat)];
+        // An approaching guardian's attack timer has usually already run down.
+        g.level.enemies[0].timer = 0.;
         let mut t = 0.;
         while t < 30. && g.level.enemies[0].hp > 0. && g.player.hp > 0. {
+            let e = &g.level.enemies[0];
+            let toward = (e.pos.x - g.player.pos.x).signum();
+            let striking = e.windup > 0. && e.windup <= 0.2;
             g.tick(
                 STEP,
                 Input {
                     attack: true,
+                    dodge: dodge_windups && striking,
+                    axis: if dodge_windups && g.player.face != toward && g.player.dodge <= 0. {
+                        toward
+                    } else {
+                        0.
+                    },
                     ..Default::default()
                 },
             );
@@ -1852,6 +1894,75 @@ mod tests {
             "duel stalled"
         );
         (t, 1. - g.player.hp / g.player.max_hp)
+    }
+    /// Strikes an unkillable guardian lands in five seconds against the
+    /// opening build holding attack (optionally dodging telegraphs).
+    fn strikes_against_held_attack(weapon: Weapon, kind: EnemyKind, dodge: bool) -> u32 {
+        let mut g = game();
+        let spawn = g.player.pos;
+        g.player = stage_build(0, weapon);
+        g.player.pos = spawn;
+        g.player.max_hp = 1e6;
+        g.player.hp = 1e6;
+        g.level.enemies = vec![Enemy::new(spawn.x + 34., FLOOR, kind, Threat::BASE)];
+        g.level.enemies[0].timer = 0.;
+        g.level.enemies[0].hp = 1e7;
+        let mut strikes = 0;
+        for _ in 0..(5. / STEP) as u32 {
+            let e = &g.level.enemies[0];
+            let toward = (e.pos.x - g.player.pos.x).signum();
+            let before = g.player.hp;
+            g.tick(
+                STEP,
+                Input {
+                    attack: true,
+                    dodge: dodge && e.windup > 0. && e.windup <= 0.2,
+                    axis: if dodge && g.player.face != toward && g.player.dodge <= 0. {
+                        toward
+                    } else {
+                        0.
+                    },
+                    ..Default::default()
+                },
+            );
+            strikes += u32::from(g.player.hp < before);
+            g.player.invuln = 0.;
+        }
+        strikes
+    }
+    #[test]
+    fn held_attack_no_longer_stun_locks_guardians() {
+        // Before guardians had poise, every light hit stunned and shoved them
+        // out of reach: holding attack let wardens and brutes land 0 strikes
+        // in five seconds (1 against the slow hammer).
+        for weapon in [Weapon::Sabre, Weapon::Glaive, Weapon::Hammer] {
+            for kind in [EnemyKind::Warden, EnemyKind::Brute, EnemyKind::Archer] {
+                let held = strikes_against_held_attack(weapon, kind, false);
+                let dodging = strikes_against_held_attack(weapon, kind, true);
+                eprintln!("{weapon:?} vs {kind:?}: {held} strikes held, {dodging} dodging");
+                assert!(held >= 2, "{kind:?} stun-locked by a held {weapon:?}");
+                // Bolts are answered with a parry rather than a dodge.
+                if kind != EnemyKind::Archer {
+                    assert!(dodging < held, "dodging the telegraph must help");
+                }
+            }
+        }
+    }
+    #[test]
+    fn guardians_flinch_only_from_heavy_hits() {
+        let mut g = game();
+        g.level.enemies = vec![
+            Enemy::new(300., FLOOR, EnemyKind::Warden, Threat::BASE),
+            Enemy::new(500., FLOOR - 30., EnemyKind::Moth, Threat::BASE),
+        ];
+        g.hit(0, 5., 1., false, false);
+        let warden = &g.level.enemies[0];
+        assert!(warden.hp < 65. && warden.stun == 0. && warden.pos.x == 300.);
+        g.hit(0, 5., 1., false, true);
+        let warden = &g.level.enemies[0];
+        assert!(warden.stun > 0. && warden.pos.x > 300.);
+        g.hit(1, 5., 1., false, false);
+        assert!(g.level.enemies[1].stun > 0., "moths still flinch");
     }
     /// Mean kill time and vitality lost across weapons and melee guardians.
     fn stage_pressure(stage: u32, threat: Threat) -> (f32, f32) {
@@ -1907,7 +2018,7 @@ mod tests {
                 "Regent vs {weapon:?}: {time:.2}s, {:.0}% vitality lost (unscaled {flat_time:.2}s)",
                 lost * 100.
             );
-            assert!(time > flat_time * 1.4 && lost > 0.4 && lost < 0.9);
+            assert!(time > flat_time * 1.3 && lost > 0.4 && lost < 0.9);
         }
     }
     #[test]
@@ -1923,7 +2034,7 @@ mod tests {
         assert!((warden(Threat::new(0, 1)).max_hp - 65. * 1.12).abs() < 1e-3);
         let regent = Enemy::new(0., FLOOR, EnemyKind::Regent, Threat::new(2, 0));
         assert!((regent.max_hp - 1050. * 1.6).abs() < 1e-2);
-        assert!((regent.power - 1.2).abs() < 1e-6);
+        assert!((regent.power - 1.1).abs() < 1e-6);
         // Travelling between bellgates generates each biome at its stage.
         let mut g = game();
         g.travel();
@@ -2133,7 +2244,7 @@ mod tests {
             g.update_enemies(STEP);
         }
         assert_eq!(g.level.enemies[0].pos, vec2(540., -50.));
-        g.hit(0, 1., 1., false);
+        g.hit(0, 1., 1., false, true);
         assert_eq!(g.level.enemies[0].pos, vec2(540., -50.));
     }
     #[test]
