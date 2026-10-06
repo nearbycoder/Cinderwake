@@ -240,7 +240,7 @@ fn ui_fixture(index: usize) -> Game {
             g.save.wins = 1;
         }
         10 => {
-            g.level = world::Level::generate(4017, world::Biome::Crown, 0);
+            g.level = world::Level::generate(4017, world::Biome::Crown, world::Threat::BASE);
             g.stage = 2;
             for enemy in &mut g.level.enemies {
                 if enemy.kind == world::EnemyKind::Regent {
@@ -286,7 +286,7 @@ fn tour_position(frame: u32) -> (world::Biome, f32) {
 fn prepare_tour_frame(g: &mut Game, frame: u32) {
     let (biome, progress) = tour_position(frame);
     if frame.is_multiple_of(TOUR_FRAMES_PER_BIOME) {
-        g.level = world::Level::generate(4017, biome, 0);
+        g.level = world::Level::generate(4017, biome, world::Threat::BASE);
         g.level.enemies.clear();
         g.player = Player::new(&save::Save::default());
         g.screen = Screen::Playing;
@@ -426,7 +426,7 @@ async fn main() {
                 world::Biome::Foundry,
                 world::Biome::Crown,
             ][frame as usize];
-            g.level = world::Level::generate(4017, biome, 0);
+            g.level = world::Level::generate(4017, biome, world::Threat::BASE);
             g.player.pos = vec2(870., world::FLOOR);
             g.camera = 640.;
             g.time = 4.;

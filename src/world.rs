@@ -36,6 +36,43 @@ pub enum EnemyKind {
     Brute,
     Regent,
 }
+impl EnemyKind {
+    /// Unscaled damage of this kind's basic strike or bolt.
+    pub fn hit_damage(self) -> f32 {
+        match self {
+            Self::Archer => 13.,
+            Self::Warden | Self::Moth => 12.,
+            Self::Brute => 22.,
+            Self::Regent => 25.,
+        }
+    }
+}
+/// Enemy strength for one stage of a run. Guardians gain 45% health and 30%
+/// damage per stage, keeping pace with the gear a run collects; recorded
+/// victories add 12% health each. The Regent, already tuned as the final
+/// fight, takes a gentler 30% health and 10% damage per stage.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Threat {
+    pub stage: u32,
+    pub wins: u32,
+}
+impl Threat {
+    pub const BASE: Self = Self { stage: 0, wins: 0 };
+    pub fn new(stage: u32, wins: u32) -> Self {
+        Self {
+            stage: stage.min(2),
+            wins,
+        }
+    }
+    pub fn health(self, kind: EnemyKind) -> f32 {
+        let per_stage = if kind == EnemyKind::Regent { 0.3 } else { 0.45 };
+        (1. + self.stage as f32 * per_stage) * (1. + self.wins as f32 * 0.12)
+    }
+    pub fn damage(self, kind: EnemyKind) -> f32 {
+        let per_stage = if kind == EnemyKind::Regent { 0.1 } else { 0.3 };
+        1. + self.stage as f32 * per_stage
+    }
+}
 #[derive(Clone, Debug)]
 pub struct Enemy {
     pub pos: Vec2,
@@ -51,16 +88,18 @@ pub struct Enemy {
     pub stun: f32,
     pub burn: f32,
     pub phase: u32,
+    /// Multiplier on this enemy's strikes and bolts.
+    pub power: f32,
 }
 impl Enemy {
-    pub fn new(x: f32, y: f32, kind: EnemyKind, difficulty: u32) -> Self {
+    pub fn new(x: f32, y: f32, kind: EnemyKind, threat: Threat) -> Self {
         let hp = match kind {
             EnemyKind::Warden => 65.,
             EnemyKind::Archer => 45.,
             EnemyKind::Moth => 32.,
             EnemyKind::Brute => 155.,
             EnemyKind::Regent => 1050.,
-        } * (1. + difficulty as f32 * 0.12);
+        } * threat.health(kind);
         Self {
             pos: vec2(x, y),
             home: x,
@@ -75,6 +114,7 @@ impl Enemy {
             stun: 0.,
             burn: 0.,
             phase: 0,
+            power: threat.damage(kind),
         }
     }
     pub fn rect(&self) -> Rect {
@@ -179,7 +219,7 @@ impl Level {
         });
     }
 
-    pub fn generate(seed: u64, biome: Biome, difficulty: u32) -> Self {
+    pub fn generate(seed: u64, biome: Biome, threat: Threat) -> Self {
         let mut rng = Rng(seed.max(1));
         let boss = biome == Biome::Crown;
         let width = if boss { 1500. } else { 3600. };
@@ -222,11 +262,17 @@ impl Level {
             l.floor(1310., FLOOR - 48., 100., 12.);
             l.floor(860., FLOOR - 48., 100., 12.);
             l.enemies
-                .push(Enemy::new(1130., FLOOR, EnemyKind::Regent, difficulty));
+                .push(Enemy::new(1130., FLOOR, EnemyKind::Regent, threat));
             l.enemies
-                .push(Enemy::new(675., Self::UPPER, EnemyKind::Archer, difficulty));
+                .push(Enemy::new(675., Self::UPPER, EnemyKind::Archer, threat));
+            // The gallery guard and a moth over the arena gate test the run's
+            // build before the Regent.
             l.enemies
-                .push(Enemy::new(580., Self::LOWER, EnemyKind::Warden, difficulty));
+                .push(Enemy::new(770., Self::UPPER, EnemyKind::Brute, threat));
+            l.enemies
+                .push(Enemy::new(1000., 170., EnemyKind::Moth, threat));
+            l.enemies
+                .push(Enemy::new(580., Self::LOWER, EnemyKind::Warden, threat));
             l.object(100., FLOOR, ObjectKind::Lore);
             l.object(720., Self::UPPER, ObjectKind::Scroll);
             l.object(620., Self::LOWER, ObjectKind::Secret);
@@ -309,11 +355,10 @@ impl Level {
                     1 => EnemyKind::Brute,
                     _ => EnemyKind::Warden,
                 };
-                l.enemies.push(Enemy::new(x, y, kind, difficulty));
+                l.enemies.push(Enemy::new(x, y, kind, threat));
             }
             for (x, y) in [(1390., 55.), (2330., 382.), (3010., 155.)] {
-                l.enemies
-                    .push(Enemy::new(x, y, EnemyKind::Moth, difficulty));
+                l.enemies.push(Enemy::new(x, y, EnemyKind::Moth, threat));
             }
             l.hazards.extend([
                 Rect::new(1370., Self::LOWER - 5., 38., 5.),
@@ -383,7 +428,7 @@ mod tests {
     fn every_tier_and_exit_are_reachable_and_returnable_across_seeds() {
         for seed in 1..100 {
             for biome in [Biome::Aqueduct, Biome::Garden, Biome::Foundry, Biome::Crown] {
-                let level = Level::generate(seed, biome, 0);
+                let level = Level::generate(seed, biome, Threat::BASE);
                 let origin = level
                     .platforms
                     .iter()
@@ -417,7 +462,7 @@ mod tests {
     fn actors_rewards_and_traversal_have_real_safe_supports() {
         for seed in 1..30 {
             for biome in [Biome::Aqueduct, Biome::Garden, Biome::Foundry, Biome::Crown] {
-                let level = Level::generate(seed, biome, 2);
+                let level = Level::generate(seed, biome, Threat::new(0, 2));
                 let positions = level
                     .objects
                     .iter()
@@ -454,17 +499,23 @@ mod tests {
 
     #[test]
     fn generation_is_reproducible_and_seeds_change_rooms() {
-        let a = Level::generate(1, Biome::Garden, 0);
-        let b = Level::generate(1, Biome::Garden, 0);
+        let a = Level::generate(1, Biome::Garden, Threat::BASE);
+        let b = Level::generate(1, Biome::Garden, Threat::BASE);
         assert_eq!(a.platforms, b.platforms);
         assert_eq!(a.traversal, b.traversal);
-        assert_ne!(a.platforms, Level::generate(2, Biome::Garden, 0).platforms);
-        assert_ne!(a.platforms, Level::generate(1, Biome::Foundry, 0).platforms);
+        assert_ne!(
+            a.platforms,
+            Level::generate(2, Biome::Garden, Threat::BASE).platforms
+        );
+        assert_ne!(
+            a.platforms,
+            Level::generate(1, Biome::Foundry, Threat::BASE).platforms
+        );
     }
 
     #[test]
     fn support_query_chooses_nearest_real_landing_below_feet() {
-        let level = Level::generate(1, Biome::Aqueduct, 0);
+        let level = Level::generate(1, Biome::Aqueduct, Threat::BASE);
         assert_eq!(level.support_at(92., 280.).unwrap().y, FLOOR);
         assert!(level.support_at(92., FLOOR + 4.).is_none());
         assert_eq!(

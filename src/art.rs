@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn enemy_walk_uses_motion_even_at_spawn_and_stops_away_from_spawn() {
-        let mut e = Enemy::new(400., FLOOR, EnemyKind::Warden, 0);
+        let mut e = Enemy::new(400., FLOOR, EnemyKind::Warden, crate::world::Threat::BASE);
         let mut a = EnemyAnimator::new(&e);
         e.pos.x += 1.;
         a.update(&e, 1. / 60.);
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn cooldown_at_spawn_is_not_mistaken_for_an_attack() {
-        let mut e = Enemy::new(400., FLOOR, EnemyKind::Regent, 0);
+        let mut e = Enemy::new(400., FLOOR, EnemyKind::Regent, crate::world::Threat::BASE);
         e.timer = 0.7;
         let mut a = EnemyAnimator::new(&e);
         a.update(&e, 1. / 60.);
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn stun_and_zero_simulation_time_freeze_enemy_animation() {
-        let mut e = Enemy::new(400., FLOOR, EnemyKind::Moth, 0);
+        let mut e = Enemy::new(400., FLOOR, EnemyKind::Moth, crate::world::Threat::BASE);
         let mut a = EnemyAnimator::new(&e);
         a.update(&e, 0.25);
         let frame = a.frame;

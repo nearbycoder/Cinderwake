@@ -327,7 +327,7 @@ fn keep_enemy_on_tier(platforms: &[Rect], enemy: &mut Enemy) {
 
 impl Game {
     pub fn new(seed: u64, save: Save) -> Self {
-        let level = Level::generate(seed, Biome::Aqueduct, save.wins);
+        let level = Level::generate(seed, Biome::Aqueduct, Threat::new(0, save.wins));
         let mut player = Player::new(&save);
         player.pos = level.spawn;
         let camera_y = (level.spawn.y - 248.).clamp(level.min_y, level.max_y - 360.);
@@ -955,7 +955,7 @@ impl Game {
                             vel: (pp - vec2(0., 15.) - (e.pos - vec2(0., 20.))).normalize_or_zero()
                                 * 170.,
                             life: 3.,
-                            damage: 13.,
+                            damage: EnemyKind::Archer.hit_damage() * e.power,
                             hostile: true,
                             kind: 2,
                         }),
@@ -967,14 +967,14 @@ impl Game {
                                         pos: e.pos - vec2(0., 34.),
                                         vel: vec2(e.face * 170., n as f32 * 48.),
                                         life: 3.,
-                                        damage: 19.,
+                                        damage: 19. * e.power,
                                         hostile: true,
                                         kind: 2,
                                     });
                                 }
                             } else {
                                 if dx.abs() < 112. && dy.abs() < 70. {
-                                    attacks.push((i, 25., e.face));
+                                    attacks.push((i, e.kind.hit_damage() * e.power, e.face));
                                 }
                                 e.pos.x += e.face * 55.;
                             }
@@ -983,11 +983,7 @@ impl Game {
                             if dx.abs() < if e.kind == EnemyKind::Brute { 66. } else { 43. }
                                 && dy.abs() < 37.
                             {
-                                attacks.push((
-                                    i,
-                                    if e.kind == EnemyKind::Brute { 22. } else { 12. },
-                                    e.face,
-                                ));
+                                attacks.push((i, e.kind.hit_damage() * e.power, e.face));
                             }
                         }
                     }
@@ -1344,7 +1340,11 @@ impl Game {
         } else {
             Biome::Foundry
         };
-        self.level = Level::generate(self.seed + self.stage as u64 * 53, biome, self.save.wins);
+        self.level = Level::generate(
+            self.seed + self.stage as u64 * 53,
+            biome,
+            Threat::new(self.stage, self.save.wins),
+        );
         self.player.pos = self.level.spawn;
         self.player.vel = Vec2::ZERO;
         self.player.ground = true;
@@ -1525,7 +1525,7 @@ mod tests {
     #[test]
     fn burn_kills_and_rewards_once() {
         let mut g = game();
-        let mut e = Enemy::new(500., FLOOR, EnemyKind::Warden, 0);
+        let mut e = Enemy::new(500., FLOOR, EnemyKind::Warden, Threat::BASE);
         e.hp = 0.01;
         e.burn = 1.;
         g.level.enemies.push(e);
@@ -1652,8 +1652,8 @@ mod tests {
     fn melee_only_hits_facing_range() {
         let mut g = game();
         g.level.enemies = vec![
-            Enemy::new(140., FLOOR, EnemyKind::Warden, 0),
-            Enemy::new(60., FLOOR, EnemyKind::Warden, 0),
+            Enemy::new(140., FLOOR, EnemyKind::Warden, Threat::BASE),
+            Enemy::new(60., FLOOR, EnemyKind::Warden, Threat::BASE),
         ];
         g.tick(
             STEP,
@@ -1670,7 +1670,7 @@ mod tests {
         for enabled in [true, false] {
             let mut g = game();
             g.settings.hitstop = enabled;
-            g.level.enemies = vec![Enemy::new(140., FLOOR, EnemyKind::Warden, 0)];
+            g.level.enemies = vec![Enemy::new(140., FLOOR, EnemyKind::Warden, Threat::BASE)];
             g.tick(
                 STEP,
                 Input {
@@ -1736,7 +1736,7 @@ mod tests {
             g.player.pos.x + 120.,
             FLOOR,
             EnemyKind::Archer,
-            0,
+            Threat::BASE,
         )];
         g.player.hp = g.player.max_hp * 0.5;
         g.tick(STEP, Input::default());
@@ -1757,7 +1757,7 @@ mod tests {
             g.player.pos.x + 120.,
             FLOOR,
             EnemyKind::Warden,
-            0,
+            Threat::BASE,
         )];
         g.player.hp = g.player.max_hp * 0.5;
         idle(&mut g, 1.);
@@ -1766,7 +1766,7 @@ mod tests {
     #[test]
     fn kills_and_hostile_bolts_queue_their_tips() {
         let mut g = tutor();
-        g.level.enemies = vec![Enemy::new(400., FLOOR, EnemyKind::Moth, 0)];
+        g.level.enemies = vec![Enemy::new(400., FLOOR, EnemyKind::Moth, Threat::BASE)];
         g.hit(0, 1000., 1., false);
         g.tick(STEP, Input::default());
         assert_eq!(g.hint.map(|h| h.0), Some(Hint::Tools));
@@ -1810,12 +1810,133 @@ mod tests {
                 g.player.pos.x + 120.,
                 FLOOR,
                 EnemyKind::Warden,
-                0,
+                Threat::BASE,
             )];
             idle(&mut g, 0.5);
             assert!(g.hint.is_none());
             assert_eq!(g.settings.hints_seen, 0);
         }
+    }
+    /// Expected build entering a stage of a run: per biome, two reliquaries and
+    /// a forge (+3 tiers) and two memories (one Ferocity, one Resolve).
+    fn stage_build(stage: u32, weapon: Weapon) -> Player {
+        let mut p = Player::new(&Save::default());
+        p.weapon = weapon;
+        p.tier = 1 + 3 * stage;
+        p.power = [1 + stage, 1, 1 + stage];
+        p.max_hp = 100. + 34. * stage as f32;
+        p.hp = p.max_hp;
+        p
+    }
+    /// A real simulated duel: the build holds attack against one enemy. Returns
+    /// seconds until the enemy falls and the fraction of vitality lost.
+    fn duel(stage: u32, threat: Threat, weapon: Weapon, kind: EnemyKind) -> (f32, f32) {
+        let mut g = game();
+        let spawn = g.player.pos;
+        g.player = stage_build(stage, weapon);
+        g.player.pos = spawn;
+        g.level.enemies = vec![Enemy::new(spawn.x + 34., FLOOR, kind, threat)];
+        let mut t = 0.;
+        while t < 30. && g.level.enemies[0].hp > 0. && g.player.hp > 0. {
+            g.tick(
+                STEP,
+                Input {
+                    attack: true,
+                    ..Default::default()
+                },
+            );
+            t += STEP;
+        }
+        assert!(
+            g.level.enemies[0].hp <= 0. || g.player.hp <= 0.,
+            "duel stalled"
+        );
+        (t, 1. - g.player.hp / g.player.max_hp)
+    }
+    /// Mean kill time and vitality lost across weapons and melee guardians.
+    fn stage_pressure(stage: u32, threat: Threat) -> (f32, f32) {
+        let mut totals = (0., 0.);
+        let mut n = 0.;
+        for weapon in [Weapon::Sabre, Weapon::Glaive, Weapon::Hammer] {
+            for kind in [EnemyKind::Warden, EnemyKind::Brute] {
+                let (time, lost) = duel(stage, threat, weapon, kind);
+                totals.0 += time;
+                totals.1 += lost;
+                n += 1.;
+            }
+        }
+        (totals.0 / n, totals.1 / n)
+    }
+    #[test]
+    fn difficulty_keeps_pace_with_a_runs_growing_build() {
+        // Kill time against melee guardians (holding attack stun-locks them, so
+        // this measures the health race) must not fall as the build grows.
+        let opening = stage_pressure(0, Threat::BASE).0;
+        for stage in 1..=2 {
+            let flat = stage_pressure(stage, Threat::BASE).0;
+            let scaled = stage_pressure(stage, Threat::new(stage, 0)).0;
+            eprintln!("stage {stage}: kill {flat:.2}s unscaled, {scaled:.2}s scaled (stage 0: {opening:.2}s)");
+            assert!(
+                flat < opening * 0.8,
+                "without stage scaling later stages get easier"
+            );
+            assert!(
+                scaled >= opening * 0.95,
+                "stage {stage} kills faster than the opening"
+            );
+        }
+        // Each guardian strike should cost a comparable share of vitality.
+        for kind in [EnemyKind::Warden, EnemyKind::Archer, EnemyKind::Brute] {
+            let share = |stage| {
+                kind.hit_damage() * Threat::new(stage, 0).damage(kind)
+                    / stage_build(stage, Weapon::Sabre).max_hp
+            };
+            for stage in 1..=2 {
+                assert!(
+                    share(stage) >= share(0) * 0.9,
+                    "{kind:?} strikes soften at stage {stage}"
+                );
+            }
+        }
+        // Face-tanking the Regent with the expected Crown build is a real fight
+        // but survivable; dodging and parrying do better.
+        for weapon in [Weapon::Sabre, Weapon::Glaive, Weapon::Hammer] {
+            let (flat_time, _) = duel(2, Threat::BASE, weapon, EnemyKind::Regent);
+            let (time, lost) = duel(2, Threat::new(2, 0), weapon, EnemyKind::Regent);
+            eprintln!(
+                "Regent vs {weapon:?}: {time:.2}s, {:.0}% vitality lost (unscaled {flat_time:.2}s)",
+                lost * 100.
+            );
+            assert!(time > flat_time * 1.4 && lost > 0.4 && lost < 0.9);
+        }
+    }
+    #[test]
+    fn threat_scales_with_stage_and_victories() {
+        let warden = |t: Threat| Enemy::new(0., FLOOR, EnemyKind::Warden, t);
+        assert_eq!(warden(Threat::BASE).max_hp, 65.);
+        assert_eq!(warden(Threat::BASE).power, 1.);
+        assert!((warden(Threat::new(2, 0)).max_hp - 65. * 1.9).abs() < 1e-3);
+        assert!(
+            (warden(Threat::new(9, 0)).power - 1.6).abs() < 1e-6,
+            "stages cap at the Crown"
+        );
+        assert!((warden(Threat::new(0, 1)).max_hp - 65. * 1.12).abs() < 1e-3);
+        let regent = Enemy::new(0., FLOOR, EnemyKind::Regent, Threat::new(2, 0));
+        assert!((regent.max_hp - 1050. * 1.6).abs() < 1e-2);
+        assert!((regent.power - 1.2).abs() < 1e-6);
+        // Travelling between bellgates generates each biome at its stage.
+        let mut g = game();
+        g.travel();
+        assert!(g.level.enemies.iter().all(|e| (e.power - 1.3).abs() < 1e-6));
+        g.travel();
+        assert_eq!(g.level.biome, Biome::Crown);
+        let regent = g.level.enemies.iter().find(|e| e.kind == EnemyKind::Regent);
+        assert!((regent.unwrap().max_hp - 1050. * 1.6).abs() < 1e-2);
+        assert_eq!(
+            g.level.enemies.len(),
+            5,
+            "Regent, two gallery guards, a moth, a warden"
+        );
     }
     #[test]
     fn death_loses_unbanked_embers_only() {
@@ -1864,7 +1985,7 @@ mod tests {
     #[test]
     fn parry_stuns_attacker() {
         let mut g = game();
-        let mut e = Enemy::new(g.player.pos.x + 25., FLOOR, EnemyKind::Warden, 0);
+        let mut e = Enemy::new(g.player.pos.x + 25., FLOOR, EnemyKind::Warden, Threat::BASE);
         e.windup = 0.001;
         g.level.enemies.push(e);
         g.tick(
@@ -2006,7 +2127,7 @@ mod tests {
             Rect::new(0., FLOOR, 400., 12.),
             Rect::new(450., -50., 100., 12.),
         ];
-        g.level.enemies = vec![Enemy::new(500., -50., EnemyKind::Warden, 0)];
+        g.level.enemies = vec![Enemy::new(500., -50., EnemyKind::Warden, Threat::BASE)];
         g.player.pos = vec2(750., -50.);
         for _ in 0..600 {
             g.update_enemies(STEP);
@@ -2103,7 +2224,7 @@ mod tests {
     fn held_single_jumps_climb_the_authored_staircase_in_every_biome() {
         for biome in [Biome::Aqueduct, Biome::Garden, Biome::Foundry, Biome::Crown] {
             let mut g = game();
-            g.level = Level::generate(42, biome, 0);
+            g.level = Level::generate(42, biome, Threat::BASE);
             g.level.enemies.clear();
             g.player.pos = g.level.spawn;
             let targets = g.level.traversal.clone();

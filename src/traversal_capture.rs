@@ -81,7 +81,7 @@ mod tests {
         for seed in [1, 4017, 98371] {
             for biome in [Biome::Aqueduct, Biome::Garden, Biome::Foundry, Biome::Crown] {
                 let mut g = Game::new(seed, Save::default());
-                g.level = Level::generate(seed, biome, 0);
+                g.level = Level::generate(seed, biome, crate::world::Threat::BASE);
                 g.player.pos = g.level.spawn;
                 g.level.enemies.clear();
                 g.level.hazards.clear();
