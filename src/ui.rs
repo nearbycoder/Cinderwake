@@ -1,5 +1,6 @@
 //! Live interface composed over generated frames and item art.
 use crate::{
+    controls::Action,
     game::*,
     render::{c, INK},
     settings::{RowValue, Settings},
@@ -133,7 +134,18 @@ impl Ui {
             c(TEAL),
         );
         self.centered_at(
-            "A / D  Move   SPACE  Jump   J  Strike   SHIFT  Dodge   L  Parry",
+            &{
+                let k = |a| g.settings.keys.short(a);
+                format!(
+                    "{} / {}  Move   {}  Jump   {}  Strike   {}  Dodge   {}  Parry",
+                    k(Action::Left),
+                    k(Action::Right),
+                    k(Action::Jump),
+                    k(Action::Strike),
+                    k(Action::Dodge),
+                    k(Action::Parry)
+                )
+            },
             354.,
             618.,
             15.,
@@ -199,15 +211,33 @@ impl Ui {
         };
         let slots = [
             (
-                "J",
+                g.settings.keys.short(Action::Strike),
                 p.weapon.name(),
                 weapon_icon,
                 p.attack_cd,
                 p.weapon.delay(),
             ),
-            ("K", "GLASSBOLT", 3, p.bow_cd, 0.32),
-            ("Q", "FIRE VESSEL", 4, p.grenade_cd, 5.),
-            ("R", "ARC SNARE", 5, p.trap_cd, 8.),
+            (
+                g.settings.keys.short(Action::Glassbolt),
+                "GLASSBOLT",
+                3,
+                p.bow_cd,
+                0.32,
+            ),
+            (
+                g.settings.keys.short(Action::FireVessel),
+                "FIRE VESSEL",
+                4,
+                p.grenade_cd,
+                5.,
+            ),
+            (
+                g.settings.keys.short(Action::ArcSnare),
+                "ARC SNARE",
+                5,
+                p.trap_cd,
+                8.,
+            ),
         ];
         for (i, (key, name, icon, cd, max)) in slots.iter().enumerate() {
             let x = 16. + i as f32 * 202.;
@@ -246,7 +276,7 @@ impl Ui {
             Rect::new(838., 649., 40., 44.),
             if p.flasks == 0 { 0.4 } else { 1. },
         );
-        self.key("F", 844., 683.);
+        self.key(g.settings.keys.short(Action::Heal), 844., 683.);
         self.text("HEALING FLASK", 886., 665., 14., c(PALE));
         self.text(
             &format!("{} / {}", p.flasks, 2 + g.save.flask),
@@ -257,9 +287,21 @@ impl Ui {
         );
         self.skin.panel(Rect::new(1024., 638., 240., 72.));
         self.skin.icon(7, Rect::new(1038., 650., 29., 29.), 1.);
-        self.text("L  PARRY", 1077., 669., 15., c(PALE));
+        self.text(
+            &format!("{}  PARRY", g.settings.keys.short(Action::Parry)),
+            1077.,
+            669.,
+            15.,
+            c(PALE),
+        );
         self.skin.icon(15, Rect::new(1148., 650., 27., 28.), 1.);
-        self.text("SHIFT", 1184., 668., 14., c(PALE));
+        self.text(
+            g.settings.keys.short(Action::Dodge),
+            1184.,
+            668.,
+            14.,
+            c(PALE),
+        );
         self.text("DODGE", 1184., 684., 11., c(MUTED));
         self.text("ESC  PAUSE", 1077., 695., 13., c(MUTED));
     }
@@ -275,12 +317,17 @@ impl Ui {
         self.heading(heading, 640., y, 37.);
     }
     pub fn draw(&self, g: &Game) {
-        let over_title = g.screen == Screen::Options && g.options_from == Screen::Title;
+        let over_title = matches!(g.screen, Screen::Options | Screen::Controls)
+            && g.options_from == Screen::Title;
         if g.screen == Screen::Title || over_title {
             self.title_screen(g);
             if over_title {
                 draw_rectangle(0., 0., 1280., 720., INK.with_alpha(0.73));
-                self.options(g);
+                if g.screen == Screen::Controls {
+                    self.controls(g);
+                } else {
+                    self.options(g);
+                }
             }
             return;
         }
@@ -311,7 +358,8 @@ impl Ui {
         }
         if g.screen == Screen::Playing && !g.map {
             if let Some((hint, _)) = g.hint {
-                let text = hint.text();
+                let text = hint.text(&g.settings.keys);
+                let text = text.as_str();
                 // The plaque's ornate end caps need generous padding.
                 let width = measure_text(text, None, 16, 1.).width + 176.;
                 let rect = Rect::new(640. - width / 2., 172., width, 42.);
@@ -320,16 +368,17 @@ impl Ui {
                 self.text(text, rect.x + 110., rect.y + 27., 16., c(PALE));
             }
             if let Some(i) = g.nearby() {
-                let text = match g.level.objects[i].kind {
-                    ObjectKind::Exit => "E   RING THE BELLGATE",
-                    ObjectKind::Scroll => "E   CLAIM A MEMORY",
-                    ObjectKind::Chest => "E   OPEN RELIQUARY",
-                    ObjectKind::Fountain => "E   DRINK FROM THE WELL",
-                    ObjectKind::Forge => "E   TEMPER WEAPON / 60 COPPER",
-                    ObjectKind::Lore => "E   READ THE INSCRIPTION",
-                    ObjectKind::Secret => "E   BREAK THE SEAL",
+                let action = match g.level.objects[i].kind {
+                    ObjectKind::Exit => "RING THE BELLGATE",
+                    ObjectKind::Scroll => "CLAIM A MEMORY",
+                    ObjectKind::Chest => "OPEN RELIQUARY",
+                    ObjectKind::Fountain => "DRINK FROM THE WELL",
+                    ObjectKind::Forge => "TEMPER WEAPON / 60 COPPER",
+                    ObjectKind::Lore => "READ THE INSCRIPTION",
+                    ObjectKind::Secret => "BREAK THE SEAL",
                 };
-                self.prompt(text, 587.);
+                let key = g.settings.keys.short(Action::Interact);
+                self.prompt(&format!("{key}   {action}"), 587.);
             }
             if g.notice_time > 0. {
                 self.center(&g.notice, 620., 15., c(PALE));
@@ -372,8 +421,12 @@ impl Ui {
                 14.,
                 c(PALE),
             );
+            let (jump, down) = (
+                g.settings.keys.short(Action::Jump),
+                g.settings.keys.short(Action::Down),
+            );
             self.center(
-                "SPACE to climb stairways; press again to double jump  /  S + SPACE to drop  /  S in the air to slam",
+                &format!("{jump} to climb stairways; press again to double jump  /  {down} + {jump} to drop  /  {down} in the air to slam"),
                 563.,
                 16.,
                 c(PALE),
@@ -399,6 +452,7 @@ impl Ui {
                 | Screen::Dead
                 | Screen::Victory
                 | Screen::Options
+                | Screen::Controls
         ) {
             draw_rectangle(0., 0., 1280., 720., INK.with_alpha(0.73));
             match g.screen {
@@ -408,6 +462,7 @@ impl Ui {
                 Screen::Camp => self.camp(g),
                 Screen::Dead | Screen::Victory => self.result(g),
                 Screen::Options => self.options(g),
+                Screen::Controls => self.controls(g),
                 _ => {}
             }
         }
@@ -426,14 +481,35 @@ impl Ui {
     }
     fn paused(&self, g: &Game) {
         self.modal(Rect::new(255., 114., 770., 493.), "The city can wait", 221.);
+        let k = |a| g.settings.keys.short(a).to_string();
         let rows = [
-            ("A / D", "Move", "SPACE", "Double jump"),
-            ("J", "Strike", "K", "Glassbolt"),
-            ("SHIFT", "Dodge", "L", "Parry"),
-            ("Q", "Fire vessel", "R", "Arc snare"),
-            ("E", "Interact", "F", "Heal"),
-            ("S", "Aerial slam", "F9", "Lighting"),
-            ("S+SPACE", "Drop through", "TAB", "Atlas"),
+            (
+                format!("{} / {}", k(Action::Left), k(Action::Right)),
+                "Move",
+                k(Action::Jump),
+                "Double jump",
+            ),
+            (
+                k(Action::Strike),
+                "Strike",
+                k(Action::Glassbolt),
+                "Glassbolt",
+            ),
+            (k(Action::Dodge), "Dodge", k(Action::Parry), "Parry"),
+            (
+                k(Action::FireVessel),
+                "Fire vessel",
+                k(Action::ArcSnare),
+                "Arc snare",
+            ),
+            (k(Action::Interact), "Interact", k(Action::Heal), "Heal"),
+            (k(Action::Down), "Aerial slam", "F9".into(), "Lighting"),
+            (
+                format!("{}+{}", k(Action::Down), k(Action::Jump)),
+                "Drop through",
+                "TAB".into(),
+                "Atlas",
+            ),
         ];
         for (i, (left, a, right, b)) in rows.iter().enumerate() {
             let y = 246. + i as f32 * 34.;
@@ -463,14 +539,63 @@ impl Ui {
             );
         }
     }
+    fn controls(&self, g: &Game) {
+        self.modal(Rect::new(255., 114., 770., 493.), "Controls", 221.);
+        let keys = &g.settings.keys;
+        for (i, action) in Action::ALL.iter().enumerate() {
+            let (x, y) = (300. + (i / 6) as f32 * 345., 240. + (i % 6) as f32 * 34.);
+            let selected = i == g.controls_row;
+            if selected {
+                draw_rectangle(x - 6., y - 4., 335., 30., c(TEAL).with_alpha(0.12));
+            }
+            self.text(
+                action.label(),
+                x + 10.,
+                y + 18.,
+                17.,
+                c(if selected { GOLD } else { PALE }),
+            );
+            let label = if selected && g.rebinding {
+                "PRESS A KEY".to_string()
+            } else {
+                keys.label(*action)
+            };
+            self.text(&label, x + 170., y + 18., 17., c(TEAL));
+        }
+        let reset = g.controls_row == Action::ALL.len();
+        if reset {
+            draw_rectangle(500., 446., 280., 30., c(TEAL).with_alpha(0.12));
+        }
+        self.center(
+            "Restore default keys",
+            466.,
+            17.,
+            c(if reset { GOLD } else { PALE }),
+        );
+        let note = if g.rebinding {
+            "Press the new key now. ESC cancels."
+        } else {
+            g.controls_note.as_deref().unwrap_or(
+                "Arrow keys and mouse buttons always work too. Menus keep ESC, ENTER, TAB, and M.",
+            )
+        };
+        self.center(note, 500., 15., c(MUTED));
+        self.button("ESC   Back", Rect::new(483., 516., 314., 46.));
+        self.center(
+            "W / S  choose      ENTER  rebind or restore",
+            584.,
+            14.,
+            c(MUTED),
+        );
+    }
     fn options(&self, g: &Game) {
         self.modal(Rect::new(255., 114., 770., 493.), "Options", 221.);
         for row in 0..Settings::ROWS {
-            let y = 240. + row as f32 * 34.;
+            let y = 236. + row as f32 * 30.;
             let selected = row == g.options_row;
             let (label, value, _) = g.settings.row(row);
             if selected {
-                draw_rectangle(300., y - 4., 680., 31., c(TEAL).with_alpha(0.12));
+                draw_rectangle(300., y - 4., 680., 28., c(TEAL).with_alpha(0.12));
                 self.text(">", 312., y + 18., 19., c(TEAL));
             }
             self.text(
@@ -498,6 +623,9 @@ impl Ui {
                         17.,
                         c(PALE),
                     );
+                }
+                RowValue::Page => {
+                    self.text("ENTER   Rebind keys", 640., y + 18., 17., c(TEAL));
                 }
                 RowValue::Switch(on) => {
                     self.text(

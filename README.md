@@ -139,6 +139,8 @@ Move that file aside to reset progression. Options are saved next to it in `sett
 
 ## Controls
 
+These are the default keys. Gameplay keys can be rebound under **O** → **Controls**; the arrow keys and mouse buttons always work as well, and menu keys stay fixed.
+
 | Input | Action |
 | --- | --- |
 | **A / D** or **← / →** | Move; choose a route at the Keeper's rest |
@@ -183,7 +185,7 @@ The [engine guide](docs/ENGINE.md) includes the source map, rendering pipeline, 
 
 **A playable prototype under active development.** The core run loop, vertical exploration, combat, progression, and visual systems are implemented. This is an original project inspired by the action-roguelite genre, not a claim of feature parity with Dead Cells.
 
-The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, lighting, and tips; those choices are saved separately from progress. Gamepad support, control rebinding, broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas fills in as you explore, with the bellgate always marked. See [current boundaries](docs/ENGINE.md#current-boundaries).
+The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, lighting, and tips; those choices are saved separately from progress. Gameplay keys can be rebound. Gamepad support, broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas fills in as you explore, with the bellgate always marked. See [current boundaries](docs/ENGINE.md#current-boundaries).
 
 To check a change locally:
 

@@ -2,6 +2,7 @@ mod animation;
 mod art;
 mod atlas;
 mod audio;
+mod controls;
 mod environment;
 mod game;
 mod particles;
@@ -27,33 +28,16 @@ fn conf() -> Conf {
         ..Default::default()
     }
 }
-fn read_input() -> Input {
-    Input {
-        axis: if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
-            1.
-        } else {
-            0.
-        } - if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
-            1.
-        } else {
-            0.
+fn read_input(g: &Game) -> Input {
+    controls::gather(
+        &g.settings.keys,
+        &controls::KeyState {
+            down: &|k| is_key_down(k),
+            pressed: &|k| is_key_pressed(k),
+            mouse_strike: is_mouse_button_down(MouseButton::Left),
+            mouse_parry: is_mouse_button_pressed(MouseButton::Right),
         },
-        jump: is_key_pressed(KeyCode::Space)
-            || is_key_pressed(KeyCode::W)
-            || is_key_pressed(KeyCode::Up),
-        jump_held: is_key_down(KeyCode::Space)
-            || is_key_down(KeyCode::W)
-            || is_key_down(KeyCode::Up),
-        dodge: is_key_pressed(KeyCode::LeftShift) || is_key_pressed(KeyCode::RightShift),
-        attack: is_key_down(KeyCode::J) || is_mouse_button_down(MouseButton::Left),
-        bow: is_key_down(KeyCode::K),
-        parry: is_key_pressed(KeyCode::L) || is_mouse_button_pressed(MouseButton::Right),
-        grenade: is_key_pressed(KeyCode::Q),
-        trap: is_key_pressed(KeyCode::R),
-        heal: is_key_pressed(KeyCode::F),
-        interact: is_key_pressed(KeyCode::E),
-        down: is_key_down(KeyCode::S) || is_key_down(KeyCode::Down),
-    }
+    )
 }
 fn menus(g: &mut Game) {
     if is_key_pressed(KeyCode::M) {
@@ -62,6 +46,10 @@ fn menus(g: &mut Game) {
     }
     if g.screen == Screen::Options {
         options_menu(g);
+        return;
+    }
+    if g.screen == Screen::Controls {
+        controls_menu(g);
         return;
     }
     if is_key_pressed(KeyCode::Tab) && g.screen == Screen::Playing {
@@ -144,6 +132,12 @@ fn options_menu(g: &mut Game) {
     if pressed(&[KeyCode::S, KeyCode::Down]) {
         g.options_row = (g.options_row + 1) % rows;
     }
+    if g.options_row == settings::Settings::CONTROLS_ROW
+        && pressed(&[KeyCode::Enter, KeyCode::Space, KeyCode::D, KeyCode::Right])
+    {
+        g.open_controls();
+        return;
+    }
     let delta = if pressed(&[KeyCode::A, KeyCode::Left]) {
         -1
     } else if pressed(&[KeyCode::D, KeyCode::Right, KeyCode::Enter, KeyCode::Space]) {
@@ -156,6 +150,40 @@ fn options_menu(g: &mut Game) {
     }
 }
 
+fn controls_menu(g: &mut Game) {
+    let pressed = |keys: &[KeyCode]| keys.iter().any(|k| is_key_pressed(*k));
+    if g.rebinding {
+        // Checked before Enter below, so the press that began listening is
+        // never captured as the new key.
+        if pressed(&[KeyCode::Escape]) {
+            g.rebinding = false;
+            g.controls_note = None;
+        } else if let Some(key) = get_last_key_pressed() {
+            g.rebind(key);
+        }
+        return;
+    }
+    if pressed(&[KeyCode::Escape]) {
+        g.close_controls();
+        return;
+    }
+    let rows = controls::Action::ALL.len() + 1;
+    if pressed(&[KeyCode::W, KeyCode::Up]) {
+        g.controls_row = (g.controls_row + rows - 1) % rows;
+    }
+    if pressed(&[KeyCode::S, KeyCode::Down]) {
+        g.controls_row = (g.controls_row + 1) % rows;
+    }
+    if pressed(&[KeyCode::Enter, KeyCode::Space]) {
+        if g.controls_row == controls::Action::ALL.len() {
+            g.reset_controls();
+        } else {
+            g.rebinding = true;
+            g.controls_note = None;
+        }
+    }
+}
+
 /// Presentation-only camera shake, scaled by the player's comfort setting.
 fn camera_shake(g: &Game) -> Vec2 {
     if g.shake <= 0. {
@@ -164,7 +192,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 16] = [
+const UI_GALLERY_NAMES: [&str; 18] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -181,6 +209,8 @@ const UI_GALLERY_NAMES: [&str; 16] = [
     "ui-13-tip",
     "ui-14-reliquary",
     "ui-15-atlas-fog",
+    "ui-16-controls",
+    "ui-17-rebound-hud",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -279,6 +309,31 @@ fn ui_fixture(index: usize) -> Game {
             }
             g.survey
                 .reveal(Rect::new(420., world::Level::UPPER - 132., 640., 360.));
+        }
+        16 => {
+            g.screen = Screen::Paused;
+            g.open_options();
+            g.options_row = settings::Settings::CONTROLS_ROW;
+            g.open_controls();
+            g.controls_row = 4;
+            g.settings
+                .keys
+                .bind(controls::Action::Jump, KeyCode::K)
+                .ok();
+            g.controls_note = Some("Jump is now K; Glassbolt moved to SPACE.".into());
+            g.rebinding = true;
+        }
+        17 => {
+            for (action, key) in [
+                (controls::Action::Strike, KeyCode::U),
+                (controls::Action::Glassbolt, KeyCode::I),
+                (controls::Action::Parry, KeyCode::O),
+                (controls::Action::Interact, KeyCode::G),
+            ] {
+                g.settings.keys.bind(action, key).ok();
+            }
+            g.hint = Some((Hint::Strike, HINT_SECONDS));
+            g.player.pos = vec2(905., world::FLOOR);
         }
         14 => {
             g.screen = Screen::Reliquary;
@@ -478,7 +533,7 @@ async fn main() {
         let mut input = if staged {
             Input::default()
         } else {
-            read_input()
+            read_input(&g)
         };
         if vertical_capture && !staged {
             input = traversal.input(&g);

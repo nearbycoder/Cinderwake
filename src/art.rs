@@ -209,16 +209,9 @@ impl Art {
             self.animator = Animator::new();
             self.dodge_trail = DodgeTrail::default();
         }
-        let frozen = matches!(
-            game.screen,
-            Screen::Paused
-                | Screen::Scroll
-                | Screen::Camp
-                | Screen::Options
-                | Screen::Reliquary
-                | Screen::Dead
-                | Screen::Victory
-        ) || game.hitstop > 0.;
+        let frozen = game.screen.freezes_world()
+            || matches!(game.screen, Screen::Dead | Screen::Victory)
+            || game.hitstop > 0.;
         let dt = if frozen { 0. } else { dt };
         self.animator.update(&game.player, game.screen, dt);
         self.dodge_trail.update(

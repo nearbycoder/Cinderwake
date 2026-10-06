@@ -1,5 +1,6 @@
 pub use crate::particles::Particle;
 use crate::{
+    controls::{Action, Bindings},
     particles::{self, Effect, VisualRng},
     save::Save,
     settings::Settings,
@@ -31,6 +32,8 @@ pub enum Screen {
     Options,
     /// Choosing between a reliquary's weapon and the one in hand.
     Reliquary,
+    /// Rebinding gameplay keys, opened from the options page.
+    Controls,
     Dead,
     Victory,
 }
@@ -57,14 +60,39 @@ impl Hint {
     pub fn bit(self) -> u32 {
         1 << self as u32
     }
-    pub fn text(self) -> &'static str {
+    /// The tip, naming the player's current keys.
+    pub fn text(self, keys: &Bindings) -> String {
+        let k = |a| keys.short(a);
         match self {
-            Self::Climb => "SPACE jumps. Press it again in the air to double jump onto higher ledges.",
-            Self::Strike => "J or left click strikes; a combo's second blow staggers guardians. SHIFT dodges their strikes.",
-            Self::Parry => "Face a bolt and press L or right click to parry it back at the shooter.",
-            Self::Drop => "S + SPACE drops through a ledge. Press S in mid-air to slam down.",
-            Self::Heal => "F drinks a healing flask. Taking damage interrupts the drink.",
-            Self::Tools => "K glassbolt, Q fire vessel, R arc snare. Embers are lost on death until banked at a bellgate.",
+            Self::Climb => format!(
+                "{} jumps. Press it again in the air to double jump onto higher ledges.",
+                k(Action::Jump)
+            ),
+            Self::Strike => format!(
+                "{} or left click strikes; a combo's second blow staggers guardians. {} dodges their strikes.",
+                k(Action::Strike),
+                k(Action::Dodge)
+            ),
+            Self::Parry => format!(
+                "Face a bolt and press {} or right click to parry it back at the shooter.",
+                k(Action::Parry)
+            ),
+            Self::Drop => format!(
+                "{} + {} drops through a ledge. Press {} in mid-air to slam down.",
+                k(Action::Down),
+                k(Action::Jump),
+                k(Action::Down)
+            ),
+            Self::Heal => format!(
+                "{} drinks a healing flask. Taking damage interrupts the drink.",
+                k(Action::Heal)
+            ),
+            Self::Tools => format!(
+                "{} glassbolt, {} fire vessel, {} arc snare. Embers are lost on death until banked at a bellgate.",
+                k(Action::Glassbolt),
+                k(Action::FireVessel),
+                k(Action::ArcSnare)
+            ),
         }
     }
 }
@@ -74,7 +102,12 @@ impl Screen {
     pub fn freezes_world(self) -> bool {
         matches!(
             self,
-            Self::Paused | Self::Scroll | Self::Camp | Self::Options | Self::Reliquary
+            Self::Paused
+                | Self::Scroll
+                | Self::Camp
+                | Self::Options
+                | Self::Controls
+                | Self::Reliquary
         )
     }
 }
@@ -267,6 +300,11 @@ pub struct Game {
     /// Screen to return to when the options page closes.
     pub options_from: Screen,
     pub options_row: usize,
+    /// Controls page: selected row (the last resets to defaults), whether the
+    /// next key press rebinds it, and a note about the last change.
+    pub controls_row: usize,
+    pub rebinding: bool,
+    pub controls_note: Option<String>,
     /// What the camera has shown of this level, for the atlas's fog of war.
     pub survey: Survey,
     /// The weapon a reliquary offers while its choice is open.
@@ -388,6 +426,9 @@ impl Game {
             settings: Settings::default(),
             options_from: Screen::Title,
             options_row: 0,
+            controls_row: 0,
+            rebinding: false,
+            controls_note: None,
             survey,
             offer: None,
             abandon_armed: false,
@@ -559,6 +600,52 @@ impl Game {
                 self.persist_settings();
             }
         }
+    }
+    pub fn open_controls(&mut self) {
+        if self.screen == Screen::Options {
+            self.screen = Screen::Controls;
+            self.controls_row = 0;
+            self.rebinding = false;
+            self.controls_note = None;
+        }
+    }
+    pub fn close_controls(&mut self) {
+        if self.screen == Screen::Controls {
+            self.screen = Screen::Options;
+            self.rebinding = false;
+            self.persist_settings();
+        }
+    }
+    /// Applies a key pressed while waiting to rebind the selected action.
+    pub fn rebind(&mut self, key: KeyCode) {
+        let Some(&action) = Action::ALL.get(self.controls_row) else {
+            return;
+        };
+        self.controls_note = Some(match self.settings.keys.bind(action, key) {
+            Err(()) => "That key is reserved for menus. Try another.".into(),
+            Ok(moved) => {
+                self.rebinding = false;
+                match moved {
+                    Some(other) => format!(
+                        "{} is now {}; {} moved to {}.",
+                        action.label(),
+                        self.settings.keys.label(action),
+                        other.label(),
+                        self.settings.keys.label(other)
+                    ),
+                    None => format!(
+                        "{} is now {}.",
+                        action.label(),
+                        self.settings.keys.label(action)
+                    ),
+                }
+            }
+        });
+    }
+    pub fn reset_controls(&mut self) {
+        self.settings.keys = Default::default();
+        self.rebinding = false;
+        self.controls_note = Some("Default keys restored.".into());
     }
     pub fn persist_settings(&mut self) {
         if !self.practice {
@@ -2164,6 +2251,48 @@ mod tests {
         g.travel();
         assert!(g.survey.fraction() < explored);
         assert!(g.survey.seen(g.level.spawn));
+    }
+    #[test]
+    fn controls_page_rebinds_swaps_and_restores() {
+        let mut g = game();
+        g.screen = Screen::Paused;
+        g.open_controls();
+        assert_eq!(
+            g.screen,
+            Screen::Paused,
+            "controls open from the options page"
+        );
+        g.open_options();
+        g.open_controls();
+        assert_eq!(g.screen, Screen::Controls);
+        g.controls_row = 2; // Jump
+        g.rebinding = true;
+        g.rebind(KeyCode::Escape);
+        assert!(g.rebinding, "a reserved key keeps listening");
+        assert!(g.controls_note.as_deref().unwrap().contains("reserved"));
+        g.rebind(KeyCode::K);
+        assert!(!g.rebinding);
+        assert_eq!(g.settings.keys.keys(Action::Jump), &[KeyCode::K]);
+        assert_eq!(g.settings.keys.keys(Action::Glassbolt), &[KeyCode::Space]);
+        assert!(g
+            .controls_note
+            .as_deref()
+            .unwrap()
+            .contains("Glassbolt moved to SPACE"));
+        assert!(Hint::Climb.text(&g.settings.keys).starts_with("K jumps"));
+        g.close_controls();
+        assert_eq!(g.screen, Screen::Options);
+        g.close_options();
+        g.start();
+        assert_eq!(
+            g.settings.keys.short(Action::Jump),
+            "K",
+            "bindings survive a new run"
+        );
+        g.screen = Screen::Options;
+        g.open_controls();
+        g.reset_controls();
+        assert_eq!(g.settings.keys, Bindings::default());
     }
     #[test]
     fn death_loses_unbanked_embers_only() {

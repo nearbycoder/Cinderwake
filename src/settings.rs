@@ -1,5 +1,6 @@
 //! Player preferences, stored apart from run progress. Settings change
 //! presentation and comfort only; they never touch gameplay randomness.
+use crate::controls::Bindings;
 use serde::{Deserialize, Serialize};
 use std::io;
 
@@ -17,6 +18,8 @@ pub struct Settings {
     /// One-time contextual tips, and which of them have been shown.
     pub hints: bool,
     pub hints_seen: u32,
+    /// Gameplay key bindings, stored by name.
+    pub keys: Bindings,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -30,12 +33,15 @@ impl Default for Settings {
             muted: false,
             hints: true,
             hints_seen: 0,
+            keys: Bindings::default(),
         }
     }
 }
 impl Settings {
     pub const FILE: &str = "settings.json";
-    pub const ROWS: usize = 7;
+    pub const ROWS: usize = 8;
+    /// The row that opens the controls page instead of adjusting a value.
+    pub const CONTROLS_ROW: usize = 7;
 
     pub fn load() -> Self {
         crate::storage::read(Self::FILE)
@@ -130,10 +136,15 @@ impl Settings {
                 RowValue::Switch(self.postfx),
                 "Post-processing, also toggled with F9. Turn off on slower graphics.",
             ),
-            _ => (
+            6 => (
                 "Gameplay tips",
                 RowValue::Switch(self.hints),
                 "One-time tips when a mechanic first matters. Switch on again to replay them.",
+            ),
+            _ => (
+                "Controls",
+                RowValue::Page,
+                "Rebind gameplay keys. Arrow keys and mouse buttons always work too.",
             ),
         }
     }
@@ -143,6 +154,8 @@ impl Settings {
 pub enum RowValue {
     Level(u8),
     Switch(bool),
+    /// Opens another page with Enter.
+    Page,
 }
 
 #[cfg(test)]

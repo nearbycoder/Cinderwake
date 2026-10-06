@@ -47,7 +47,8 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/ui_skin.rs`](../src/ui_skin.rs) | Generated UI atlas, nine-slice frames, gauges, icons, and crest |
 | [`src/audio.rs`](../src/audio.rs) | Embedded audio, effect dispatch, and music controls |
 | [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress |
-| [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute, and seen tips |
+| [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute, seen tips, and key bindings |
+| [`src/controls.rs`](../src/controls.rs) | Rebindable gameplay actions, the bindable-key table, and input gathering |
 | [`src/storage.rs`](../src/storage.rs) | Per-platform data directory, atomic file replacement, and browser `localStorage` |
 | [`web/`](../web/) | Browser page and storage plugin used by `scripts/build-web.sh` |
 
@@ -136,6 +137,12 @@ Original synthesized ambient music and nine effects are embedded with the artwor
 
 In normal play, a one-time tip banner appears below the HUD the first time each mechanic matters: an enemy within reach (strike and dodge), a hostile bolt heading toward you (parry), vitality below 60% with a flask left (heal), a ledge just overhead (double jump), standing on a raised ledge (drop-through and slam), and the first kill (tools and banking embers). Tips about immediate danger are shown first; only one is on screen at a time, for six seconds, after the biome title fades, and play never pauses. Each tip is marked as seen in `settings.json`. The **Gameplay tips** option turns them off; switching it back on replays them. Practice, gallery, and capture modes never show tips, so captures are unchanged.
 
+### Controls and rebinding
+
+The options page's **Controls** row opens a page listing the twelve gameplay actions: move left and right, jump, drop/slam, strike, glassbolt, dodge, parry, fire vessel, arc snare, heal, and interact. **Enter** waits for the next key, which becomes the action's only key; **Escape** cancels. If the key already belonged to another action, that action loses it, and if left with no key it takes the rebound action's previous key, so every action keeps a key. **Restore default keys** returns to the original layout, including the second default keys W (jump) and right Shift (dodge). [`src/controls.rs`](../src/controls.rs) holds the bindable-key table. Escape, Enter, Tab, M, the function keys, and the arrows aren't in it and can't be bound. The arrow keys and the left and right mouse buttons always remain alternatives for moving, jumping, dropping, striking, and parrying. Menus keep their fixed keys (W/S/A/D, arrows, Enter, 1–3).
+
+Bindings are stored by key name in `settings.json`. Unknown names fall back to the action's default, and a file that assigns one key to two actions resets to defaults. The HUD badges, interaction prompts, pause list, title line, atlas help, and tips all show the current keys. Input is gathered by `controls::gather` from closures over key state, so the mapping is unit-tested without a window. Rebinding was verified in the browser build with real key events: Jump rebound to K made K jump and W stop jumping, Space moved to the glassbolt and fired it, and the binding survived a new session.
+
 From the pause screen, **X** asks for confirmation and a second **X** abandons the run with the same losses as a death.
 
 ## Build and verification
@@ -184,7 +191,7 @@ Run capture commands from the repository root. Outputs are written beneath `capt
 | `--demo` | Continuous scripted practice play | Runs until closed |
 | `--gallery` | Four staged biome views | `captures/biome-0.png` through `biome-3.png` |
 | `--sprite-preview` | Eight hero animation panels | `captures/animation-preview.png` |
-| `--ui-gallery` | Fifteen frozen, fixed-seed interface fixtures, including the options page, abandon confirmation, a tip banner, and a reliquary choice | `captures/ui-*.png` |
+| `--ui-gallery` | Eighteen frozen, fixed-seed interface fixtures, including the options and controls pages, abandon confirmation, a tip banner, a reliquary choice, the atlas fog, and a HUD with rebound keys | `captures/ui-*.png` |
 | `--environment-tour` | 24 seconds of camera traversal across all four biomes | 480 PNGs at 20 fps in `captures/tour/` |
 | `--motion-capture` | 15 seconds of scripted input with live physics and combat | 300 PNGs at 20 fps in `captures/motion/` |
 | `--vertical-capture` | A complete fixed-seed Aqueduct route through all elevations | 20 PNGs per simulated second in `captures/vertical/`; about 25 seconds |
@@ -239,7 +246,7 @@ This is a playable prototype, with these limits visible in the current implement
 - Three melee weapons, a small skill set, shared melee artwork, and reused animation poses for some actions.
 - One final boss, one ending, and a limited mutation and upgrade economy. No blueprint unlock tree, extensive affixes/synergies, or traversal-rune progression.
 - An atlas with a simple cell-based fog of war; no challenge modes or DLC systems.
-- Keyboard/mouse controls without gamepad support or rebinding; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, and lighting.
+- Keyboard/mouse controls with rebindable gameplay keys, but no gamepad support; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, lighting, and key bindings.
 - macOS Apple Silicon and Linux verification only, an experimental browser build tested only in headless Chrome, and local, unpublished packages (an ad-hoc signed macOS app and a Linux tarball).
 - Prototype audio, balancing, encounter variety, and animation coverage. Visual captures and automated tests are complementary checks, not a guarantee of zero defects.
 
