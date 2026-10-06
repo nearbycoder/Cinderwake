@@ -267,6 +267,18 @@ fn motion_input(frame: u32) -> Input {
     }
 }
 
+/// Fits the 16:9 frame inside the window. Drawing rectangles use logical
+/// (DPI-independent) units, but camera viewports address physical framebuffer
+/// pixels, so the HUD viewport must be scaled or it shrinks into a corner on
+/// fractional and Retina displays.
+fn letterbox(screen_w: f32, screen_h: f32, dpi: f32) -> (Rect, (i32, i32, i32, i32)) {
+    let scale = (screen_w / 1280.).min(screen_h / 720.);
+    let (w, h) = (1280. * scale, 720. * scale);
+    let (x, y) = ((screen_w - w) / 2., (screen_h - h) / 2.);
+    let px = |v: f32| (v * dpi).round() as i32;
+    (Rect::new(x, y, w, h), (px(x), px(y), px(w), px(h)))
+}
+
 #[macroquad::main(conf)]
 async fn main() {
     let args: Vec<_> = std::env::args().collect();
@@ -499,19 +511,16 @@ async fn main() {
         }
         set_default_camera();
         clear_background(render::INK);
-        let scale = (screen_width() / 1280.).min(screen_height() / 720.);
-        let w = 1280. * scale;
-        let h = 720. * scale;
-        let x = (screen_width() - w) / 2.;
-        let y = (screen_height() - h) / 2.;
-        postfx.draw(&target.texture, Rect::new(x, y, w, h), use_postfx);
+        let (frame_rect, viewport) = letterbox(screen_width(), screen_height(), screen_dpi_scale());
+        let Rect { x, y, w, h } = frame_rect;
+        postfx.draw(&target.texture, frame_rect, use_postfx);
         if arrival > 0. && !sprite_preview {
             let amount = arrival / 0.45;
             draw_rectangle(x, y, w, h, render::INK.with_alpha(amount * amount));
         }
         let ui_cam = Camera2D {
             zoom: vec2(2. / 1280., 2. / 720.),
-            viewport: Some((x as i32, y as i32, w as i32, h as i32)),
+            viewport: Some(viewport),
             ..Camera2D::from_display_rect(Rect::new(0., 0., 1280., 720.))
         };
         set_camera(&ui_cam);
@@ -633,6 +642,20 @@ async fn main() {
 #[cfg(test)]
 mod capture_tests {
     use super::*;
+
+    #[test]
+    fn hud_viewport_covers_the_physical_frame_at_any_dpi() {
+        // A 1280 x 720 framebuffer at 1.25x reports a 1024 x 576 logical screen.
+        let (rect, viewport) = letterbox(1024., 576., 1.25);
+        assert_eq!(rect, Rect::new(0., 0., 1024., 576.));
+        assert_eq!(viewport, (0, 0, 1280, 720));
+        let (_, viewport) = letterbox(1280., 720., 1.);
+        assert_eq!(viewport, (0, 0, 1280, 720));
+        // Retina: pillarboxed logical window, doubled physical viewport.
+        let (rect, viewport) = letterbox(1600., 720., 2.);
+        assert_eq!(rect, Rect::new(160., 0., 1280., 720.));
+        assert_eq!(viewport, (320, 0, 2560, 1440));
+    }
 
     #[test]
     fn environment_tour_covers_full_width_of_every_biome() {
