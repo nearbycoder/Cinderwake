@@ -61,7 +61,7 @@ Enemy and reward variations are seeded. The route structure is authored rather t
 
 Movement includes acceleration, variable-height double jumping, coyote time, jump buffering, one-way platforms, a deliberate ledge drop-through, and aerial ground slam. The camera follows both axes. Rendering, interaction ranges, particles, lights, and the atlas account for elevation.
 
-The atlas is a full survey showing platforms, objects, guardians, hazards, bellgates, and the current camera footprint. It has no fog of war.
+The atlas (**Tab**) and the HUD minimap show platforms, objects, guardians, hazards, bellgates, and the current camera footprint, under a fog of war. `world::Survey` divides each level into 80 × 62 world-unit cells and marks every cell the camera shows, each tick. Platforms are drawn only along their seen stretches, unseen cells are darkened, and guardians, hazards, and relics appear only once seen. The bellgate is always marked, and the atlas header reports the share surveyed. Each biome starts dark apart from the spawn view. Practice, gallery, and capture modes keep the complete survey so their output is unchanged; the `ui-15-atlas-fog` fixture shows the fog.
 
 ## Combat and progression
 
@@ -236,7 +236,7 @@ This is a playable prototype, with these limits visible in the current implement
 - Authored three-tier layouts and a single two-way biome branch, rather than a procedural room graph or a large branching world.
 - Three melee weapons, a small skill set, shared melee artwork, and reused animation poses for some actions.
 - One final boss, one ending, and a limited mutation and upgrade economy. No blueprint unlock tree, extensive affixes/synergies, or traversal-rune progression.
-- A complete atlas without fog of war; no challenge modes or DLC systems.
+- An atlas with a simple cell-based fog of war; no challenge modes or DLC systems.
 - Keyboard/mouse controls without gamepad support or rebinding; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, and lighting.
 - macOS Apple Silicon and Linux verification only, an experimental browser build tested only in headless Chrome, and local ad-hoc macOS packaging without notarization.
 - Prototype audio, balancing, encounter variety, and animation coverage. Visual captures and automated tests are complementary checks, not a guarantee of zero defects.

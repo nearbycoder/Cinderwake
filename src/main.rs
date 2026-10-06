@@ -164,7 +164,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 15] = [
+const UI_GALLERY_NAMES: [&str; 16] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -180,6 +180,7 @@ const UI_GALLERY_NAMES: [&str; 15] = [
     "ui-12-paused-abandon",
     "ui-13-tip",
     "ui-14-reliquary",
+    "ui-15-atlas-fog",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -268,6 +269,17 @@ fn ui_fixture(index: usize) -> Game {
             g.request_abandon();
         }
         13 => g.hint = Some((Hint::Parry, HINT_SECONDS)),
+        15 => {
+            // Fog of war applies to normal play only; this staged view shows it.
+            g.practice = false;
+            g.map = true;
+            for x in (0..=8).map(|i| i as f32 * 110.) {
+                g.survey
+                    .reveal(Rect::new(x, world::FLOOR - 248., 640., 360.));
+            }
+            g.survey
+                .reveal(Rect::new(420., world::Level::UPPER - 132., 640., 360.));
+        }
         14 => {
             g.screen = Screen::Reliquary;
             g.offer = Some(Weapon::Hammer);

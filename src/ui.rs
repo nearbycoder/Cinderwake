@@ -341,10 +341,15 @@ impl Ui {
             self.heading("Atlas of the dying city", 640., 160., 37.);
             self.center(
                 &format!(
-                    "{}  /  {}  /  SEED {}",
+                    "{}  /  {}  /  SEED {}{}",
                     crate::environment::zone_name(g.level.biome, g.camera, g.level.width),
                     Level::tier_name(g.player.pos.y),
-                    g.level.seed
+                    g.level.seed,
+                    if g.practice {
+                        String::new()
+                    } else {
+                        format!("  /  {:.0}% SURVEYED", g.survey.fraction() * 100.)
+                    }
                 ),
                 188.,
                 15.,
@@ -374,7 +379,11 @@ impl Ui {
                 c(PALE),
             );
             self.center(
-                "The outlined window tracks your view. All routes are shown; gaps connect the city's tiers.",
+                if g.practice {
+                    "The outlined window tracks your view. All routes are shown; gaps connect the city's tiers."
+                } else {
+                    "The outlined window tracks your view. Unseen stretches stay dark; the bellgate is always marked."
+                },
                 586.,
                 14.,
                 c(MUTED),
@@ -774,6 +783,9 @@ impl Ui {
     fn minimap(&self, g: &Game, rect: Rect) {
         let Rect { x, y, w, h } = rect;
         let expanded = h > 120.;
+        // Practice and staged captures keep the complete survey.
+        let fog = !g.practice;
+        let seen = |pos: Vec2| !fog || g.survey.seen(pos);
         draw_rectangle(x, y, w, h, c(0x091923));
         for (top, bottom, color) in [
             (g.level.min_y, 121., 0x142c37),
@@ -784,31 +796,45 @@ impl Ui {
             let b = Self::map_point(g, rect, vec2(g.level.width, bottom));
             draw_rectangle(a.x, a.y, b.x - a.x, b.y - a.y, c(color));
         }
+        if fog {
+            for cell in g.survey.unseen() {
+                let a = Self::map_point(g, rect, vec2(cell.x, cell.y));
+                let b = Self::map_point(g, rect, vec2(cell.right(), cell.bottom()));
+                draw_rectangle(a.x, a.y, b.x - a.x, b.y - a.y, c(0x03090d).with_alpha(0.78));
+            }
+        }
         for tier_y in [Level::UPPER, FLOOR, Level::LOWER] {
             let a = Self::map_point(g, rect, vec2(0., tier_y));
             let b = Self::map_point(g, rect, vec2(g.level.width, tier_y));
             draw_line(a.x, a.y, b.x, b.y, 1., c(0x456465).with_alpha(0.45));
         }
         for p in &g.level.platforms {
-            let a = Self::map_point(g, rect, vec2(p.x, p.y));
-            let b = Self::map_point(g, rect, vec2(p.right(), p.bottom()));
-            draw_rectangle(
-                a.x,
-                a.y,
-                (b.x - a.x).max(1.),
-                (b.y - a.y).max(if expanded { 2. } else { 1. }),
-                c(0x779b91),
-            );
+            let spans = if fog {
+                g.survey.seen_spans(p.x, p.right(), p.y)
+            } else {
+                vec![(p.x, p.right())]
+            };
+            for (left, right) in spans {
+                let a = Self::map_point(g, rect, vec2(left, p.y));
+                let b = Self::map_point(g, rect, vec2(right, p.bottom()));
+                draw_rectangle(
+                    a.x,
+                    a.y,
+                    (b.x - a.x).max(1.),
+                    (b.y - a.y).max(if expanded { 2. } else { 1. }),
+                    c(0x779b91),
+                );
+            }
         }
         if expanded {
-            for hazard in &g.level.hazards {
+            for hazard in g.level.hazards.iter().filter(|h| seen(h.center())) {
                 let a = Self::map_point(g, rect, vec2(hazard.x, hazard.y));
                 let b = Self::map_point(g, rect, vec2(hazard.right(), hazard.bottom()));
                 draw_rectangle(a.x, a.y, (b.x - a.x).max(2.), 3., c(0xe09078));
             }
         }
-        // This is a complete atlas, not a fog-of-war map. The window is the actual
-        // two-dimensional camera footprint, including above- and below-ground views.
+        // The window is the actual two-dimensional camera footprint, including
+        // above- and below-ground views.
         let view_a = Self::map_point(g, rect, vec2(g.camera, g.camera_y));
         let view_b = Self::map_point(g, rect, vec2(g.camera + 640., g.camera_y + 360.));
         draw_rectangle(
@@ -827,12 +853,23 @@ impl Ui {
             c(TEAL).with_alpha(0.48),
         );
         if expanded {
-            for enemy in g.level.enemies.iter().filter(|enemy| enemy.hp > 0.) {
+            for enemy in g
+                .level
+                .enemies
+                .iter()
+                .filter(|enemy| enemy.hp > 0. && seen(enemy.pos))
+            {
                 let pos = Self::map_point(g, rect, enemy.pos - vec2(0., 14.));
                 draw_circle(pos.x, pos.y, 2.4, c(0xdb927c));
             }
         }
-        for o in g.level.objects.iter().filter(|object| !object.used) {
+        // The bellgate is always marked so the destination is never lost.
+        for o in g
+            .level
+            .objects
+            .iter()
+            .filter(|o| !o.used && (o.kind == ObjectKind::Exit || seen(o.pos)))
+        {
             let pos = Self::map_point(g, rect, o.pos - vec2(0., 8.));
             let radius = if expanded { 3. } else { 1.6 };
             match o.kind {

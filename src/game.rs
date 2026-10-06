@@ -267,6 +267,8 @@ pub struct Game {
     /// Screen to return to when the options page closes.
     pub options_from: Screen,
     pub options_row: usize,
+    /// What the camera has shown of this level, for the atlas's fog of war.
+    pub survey: Survey,
     /// The weapon a reliquary offers while its choice is open.
     pub offer: Option<Weapon>,
     /// The first abandon request from the pause screen only asks for confirmation.
@@ -356,6 +358,8 @@ impl Game {
         player.pos = level.spawn;
         let camera_y = (level.spawn.y - 248.).clamp(level.min_y, level.max_y - 360.);
         let last_safe_pos = level.spawn;
+        let mut survey = Survey::new(&level);
+        survey.reveal(Rect::new(0., camera_y, 640., 360.));
         Self {
             player,
             level,
@@ -384,6 +388,7 @@ impl Game {
             settings: Settings::default(),
             options_from: Screen::Title,
             options_row: 0,
+            survey,
             offer: None,
             abandon_armed: false,
             teach: false,
@@ -953,6 +958,8 @@ impl Game {
         self.camera_y = self
             .camera_y
             .clamp(self.level.min_y, self.level.max_y - 360.);
+        self.survey
+            .reveal(Rect::new(self.camera, self.camera_y, 640., 360.));
     }
     fn update_enemies(&mut self, dt: f32) {
         let pp = self.player.pos;
@@ -1429,6 +1436,8 @@ impl Game {
         self.camera = 0.;
         self.camera_y =
             (self.level.spawn.y - 248.).clamp(self.level.min_y, self.level.max_y - 360.);
+        self.survey = Survey::new(&self.level);
+        self.survey.reveal(Rect::new(0., self.camera_y, 640., 360.));
         self.intro = 4.;
         self.screen = Screen::Playing;
     }
@@ -2139,6 +2148,22 @@ mod tests {
                 assert!(g.offer.is_none());
             }
         }
+    }
+    #[test]
+    fn exploring_reveals_the_atlas_and_each_biome_starts_dark() {
+        let mut g = game();
+        let far = vec2(1500., FLOOR);
+        assert!(g.survey.seen(g.player.pos));
+        assert!(!g.survey.seen(far));
+        g.player.pos = far;
+        for _ in 0..240 {
+            g.tick(STEP, Input::default());
+        }
+        assert!(g.survey.seen(far), "the camera followed and revealed it");
+        let explored = g.survey.fraction();
+        g.travel();
+        assert!(g.survey.fraction() < explored);
+        assert!(g.survey.seen(g.level.spawn));
     }
     #[test]
     fn death_loses_unbanked_embers_only() {

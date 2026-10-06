@@ -54,7 +54,7 @@ Every biome connects **upper galleries → surface works → undercroft** throug
   </tr>
   <tr>
     <td><a href="docs/media/combat.png"><img src="docs/media/combat.png" alt="Cinderwake combat with animated sprites, particles, and lighting" width="420"></a><br><strong>Clockwork combat</strong><br>Sprite animation, impact effects, and selective bloom.</td>
-    <td><a href="docs/media/atlas.png"><img src="docs/media/atlas.png" alt="The full-height atlas showing all three elevations and the camera footprint" width="420"></a><br><strong>Read the whole route</strong><br>The atlas surveys all three elevations.</td>
+    <td><a href="docs/media/atlas.png"><img src="docs/media/atlas.png" alt="The full-height atlas showing all three elevations and the camera footprint" width="420"></a><br><strong>Read the whole route</strong><br>The atlas maps all three elevations as you explore them (shown fully surveyed).</td>
   </tr>
   <tr>
     <td><a href="docs/media/foundry.png"><img src="docs/media/foundry.png" alt="The Ember Foundry's industrial scenery and molten light" width="420"></a><br><strong>The Ember Foundry</strong><br>Machinery, fire, and drifting sparks.</td>
@@ -175,7 +175,7 @@ The [engine guide](docs/ENGINE.md) includes the source map, rendering pipeline, 
 
 **A playable prototype under active development.** The core run loop, vertical exploration, combat, progression, and visual systems are implemented. This is an original project inspired by the action-roguelite genre, not a claim of feature parity with Dead Cells.
 
-The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, lighting, and tips; those choices are saved separately from progress. Gamepad support, control rebinding, broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas is a complete survey, without fog of war. See [current boundaries](docs/ENGINE.md#current-boundaries).
+The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, lighting, and tips; those choices are saved separately from progress. Gamepad support, control rebinding, broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas fills in as you explore, with the bellgate always marked. See [current boundaries](docs/ENGINE.md#current-boundaries).
 
 To check a change locally:
 

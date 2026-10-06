@@ -381,8 +381,105 @@ impl Level {
         l
     }
 }
+/// The parts of a level the camera has shown, kept as coarse cells for the
+/// atlas's fog of war. The bellgate is marked whether or not it has been seen.
+#[derive(Clone, Debug)]
+pub struct Survey {
+    min_y: f32,
+    cols: usize,
+    rows: usize,
+    cells: Vec<bool>,
+}
+impl Survey {
+    pub const CELL_W: f32 = 80.;
+    pub const CELL_H: f32 = 62.;
+    pub fn new(level: &Level) -> Self {
+        let cols = (level.width / Self::CELL_W).ceil().max(1.) as usize;
+        let rows = ((level.max_y - level.min_y) / Self::CELL_H).ceil().max(1.) as usize;
+        Self {
+            min_y: level.min_y,
+            cols,
+            rows,
+            cells: vec![false; cols * rows],
+        }
+    }
+    fn col(&self, x: f32) -> usize {
+        ((x / Self::CELL_W).floor().max(0.) as usize).min(self.cols - 1)
+    }
+    fn row(&self, y: f32) -> usize {
+        (((y - self.min_y) / Self::CELL_H).floor().max(0.) as usize).min(self.rows - 1)
+    }
+    /// Marks every cell the rectangle touches.
+    pub fn reveal(&mut self, view: Rect) {
+        for row in self.row(view.y)..=self.row(view.bottom()) {
+            for col in self.col(view.x)..=self.col(view.right()) {
+                self.cells[row * self.cols + col] = true;
+            }
+        }
+    }
+    pub fn seen(&self, pos: Vec2) -> bool {
+        self.cells[self.row(pos.y) * self.cols + self.col(pos.x)]
+    }
+    /// The seen stretches of a horizontal span at height `y`.
+    pub fn seen_spans(&self, x0: f32, x1: f32, y: f32) -> Vec<(f32, f32)> {
+        let row = self.row(y);
+        let mut spans: Vec<(f32, f32)> = vec![];
+        for col in self.col(x0)..=self.col(x1) {
+            if !self.cells[row * self.cols + col] {
+                continue;
+            }
+            let a = x0.max(col as f32 * Self::CELL_W);
+            let b = x1.min((col + 1) as f32 * Self::CELL_W);
+            match spans.last_mut() {
+                Some(last) if (last.1 - a).abs() < 0.01 => last.1 = b,
+                _ => spans.push((a, b)),
+            }
+        }
+        spans
+    }
+    /// World rectangles of unseen cells.
+    pub fn unseen(&self) -> impl Iterator<Item = Rect> + '_ {
+        self.cells
+            .iter()
+            .enumerate()
+            .filter(|(_, seen)| !**seen)
+            .map(|(i, _)| {
+                Rect::new(
+                    (i % self.cols) as f32 * Self::CELL_W,
+                    self.min_y + (i / self.cols) as f32 * Self::CELL_H,
+                    Self::CELL_W,
+                    Self::CELL_H,
+                )
+            })
+    }
+    pub fn fraction(&self) -> f32 {
+        self.cells.iter().filter(|seen| **seen).count() as f32 / self.cells.len() as f32
+    }
+}
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn survey_reveals_what_the_camera_shows() {
+        let level = Level::generate(4017, Biome::Aqueduct, Threat::BASE);
+        let mut survey = Survey::new(&level);
+        assert_eq!(survey.fraction(), 0.);
+        assert!(!survey.seen(level.spawn));
+        survey.reveal(Rect::new(0., FLOOR - 248., 640., 360.));
+        assert!(survey.seen(level.spawn));
+        assert!(!survey.seen(vec2(2000., FLOOR)));
+        assert!(!survey.seen(vec2(100., Level::LOWER)));
+        assert!(survey.fraction() > 0. && survey.fraction() < 0.2);
+        // A platform crossing the edge of view is shown only where it was seen.
+        let spans = survey.seen_spans(560., 900., FLOOR);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].0, 560.);
+        assert!(spans[0].1 >= 640. && spans[0].1 <= 720.);
+        assert!(survey.unseen().all(|cell| !survey.seen(cell.center())));
+        // Edges and out-of-range points clamp rather than panic.
+        survey.reveal(Rect::new(-50., level.min_y - 40., level.width + 100., 30.));
+        assert!(survey.seen(vec2(level.width + 10., level.min_y - 100.)));
+    }
+
     use super::*;
 
     // Deliberately conservative jump envelope: one full held jump rises 52.9px
