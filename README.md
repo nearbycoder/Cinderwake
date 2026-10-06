@@ -102,7 +102,7 @@ It contains the executable, licenses, and a short README. It is for local sharin
 python3 -m http.server -d dist/web 8080   # then open http://localhost:8080
 ```
 
-The browser build is a single WebAssembly file of about 49 MB, because all the art is embedded. Progress is kept in the browser's `localStorage`. It has been tested only in headless Chrome on Linux, at 1× and 1.25× pixel ratios: the title screen, starting a run, movement, the atlas, pausing, and keeping progress across a reload. Frame rate, sound, Firefox, Safari, and mobile browsers have not been checked. No hosted version is published.
+The browser build is a single WebAssembly file of about 52 MB, because all the art and audio are embedded. Progress is kept in the browser's `localStorage`. It has been tested only in headless Chrome on Linux, at 1× and 1.25× pixel ratios: the title screen, starting a run, movement, the atlas, pausing, and keeping progress across a reload. Headless Chrome also showed the right music loop starting on the title and when a run begins, but nobody has listened to the browser build. Frame rate, Firefox, Safari, and mobile browsers have not been checked. No hosted version is published.
 
 See [build and verification notes](docs/ENGINE.md#build-and-verification) for more detail.
 
@@ -204,7 +204,7 @@ Tests cover physics, combat, progression, animation timing, effects, and multi-b
 The setting, characters, encounters, generated artwork, and synthesized audio are original. No Dead Cells assets or source code are used. [Dead Cells](https://en.wikipedia.org/wiki/Dead_Cells) was the initial genre and feel reference.
 
 - **Artwork:** created with the built-in ImageGen tool. Original PNG outputs and prompts are retained for [characters](assets/sprites/PROMPTS.md), [environments](assets/environment/PROMPTS.md), [panoramas and animated scenery](assets/environment/MOTION-PROMPTS.md), [vertical backdrops](assets/environment/DEPTH-PROMPTS.md), and [interface elements](assets/ui/PROMPTS.md).
-- **Audio:** original synthesized ambience and nine effects; regenerate with `python3 scripts/synthesize.py`.
+- **Audio:** an original synthesized score with a seamless loop for each biome plus the title and Keeper, and nine effects; regenerate and check with `python3 scripts/synthesize.py`.
 - **Font:** Cormorant Garamond, under the [SIL Open Font License](assets/FONT-LICENSE.txt).
 - **Code and generated artwork/audio:** [MIT](LICENSE). Macroquad and other dependencies retain their respective licenses.
 

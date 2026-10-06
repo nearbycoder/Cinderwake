@@ -618,8 +618,11 @@ async fn main() {
             input
         };
         let silent = automated || staged || sprite_preview;
+        let score = audio::Track::for_game(&g);
         audio.update(
             &mut g.sounds,
+            score,
+            get_frame_time().min(0.1),
             if silent { 0. } else { g.settings.music_gain() },
             if silent {
                 0.
