@@ -47,7 +47,7 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/ui_skin.rs`](../src/ui_skin.rs) | Generated UI atlas, nine-slice frames, gauges, icons, and crest |
 | [`src/audio.rs`](../src/audio.rs) | Embedded audio, effect dispatch, and music controls |
 | [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress |
-| [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute |
+| [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute, and seen tips |
 | [`src/storage.rs`](../src/storage.rs) | Per-platform data directory, atomic file replacement, and browser `localStorage` |
 | [`web/`](../web/) | Browser page and storage plugin used by `scripts/build-web.sh` |
 
@@ -128,7 +128,11 @@ Original synthesized ambient music and nine effects are embedded with the artwor
 
 ### Options
 
-**O** opens the options page from the title or pause screen. **W/S** choose a row, **A/D** adjust it, and **Escape** returns and saves. Music and effects volume and screen shake run from 0 to 100% of the original mix in 10% steps; hit-stop, reduced flashes, and lighting are switches. Settings live in `settings.json` beside the progress file (or under `cinderwake/settings.json` in browser storage), are ignored by practice and capture modes, and change only presentation and comfort: shake scales the presented camera offset, not the simulation's shake timer; reduced flashes dims flash and ring particles to 30% and scales attack and burn lights. Hit-stop is the one exception: turning it off removes the 35 ms freeze when a melee strike lands, which changes simulation timing but not gameplay randomness.
+**O** opens the options page from the title or pause screen. **W/S** choose a row, **A/D** adjust it, and **Escape** returns and saves. Music and effects volume and screen shake run from 0 to 100% of the original mix in 10% steps; hit-stop, reduced flashes, lighting, and gameplay tips are switches. Settings live in `settings.json` beside the progress file (or under `cinderwake/settings.json` in browser storage), are ignored by practice and capture modes, and change only presentation and comfort: shake scales the presented camera offset, not the simulation's shake timer; reduced flashes dims flash and ring particles to 30% and scales attack and burn lights. Hit-stop is the one exception: turning it off removes the 35 ms freeze when a melee strike lands, which changes simulation timing but not gameplay randomness.
+
+### First-run tips
+
+In normal play, a one-time tip banner appears below the HUD the first time each mechanic matters: an enemy within reach (strike and dodge), a hostile bolt heading toward you (parry), vitality below 60% with a flask left (heal), a ledge just overhead (double jump), standing on a raised ledge (drop-through and slam), and the first kill (tools and banking embers). Tips about immediate danger are shown first; only one is on screen at a time, for six seconds, after the biome title fades, and play never pauses. Each tip is marked as seen in `settings.json`. The **Gameplay tips** option turns them off; switching it back on replays them. Practice, gallery, and capture modes never show tips, so captures are unchanged.
 
 From the pause screen, **X** asks for confirmation and a second **X** abandons the run with the same losses as a death.
 
@@ -174,7 +178,7 @@ Run capture commands from the repository root. Outputs are written beneath `capt
 | `--demo` | Continuous scripted practice play | Runs until closed |
 | `--gallery` | Four staged biome views | `captures/biome-0.png` through `biome-3.png` |
 | `--sprite-preview` | Eight hero animation panels | `captures/animation-preview.png` |
-| `--ui-gallery` | Thirteen frozen, fixed-seed interface fixtures, including the options page and abandon confirmation | `captures/ui-*.png` |
+| `--ui-gallery` | Fourteen frozen, fixed-seed interface fixtures, including the options page, abandon confirmation, and a tip banner | `captures/ui-*.png` |
 | `--environment-tour` | 24 seconds of camera traversal across all four biomes | 480 PNGs at 20 fps in `captures/tour/` |
 | `--motion-capture` | 15 seconds of scripted input with live physics and combat | 300 PNGs at 20 fps in `captures/motion/` |
 | `--vertical-capture` | A complete fixed-seed Aqueduct route through all elevations | 20 PNGs per simulated second in `captures/vertical/`; about 25 seconds |

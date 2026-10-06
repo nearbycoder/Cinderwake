@@ -14,6 +14,9 @@ pub struct Settings {
     pub reduce_flashes: bool,
     pub postfx: bool,
     pub muted: bool,
+    /// One-time contextual tips, and which of them have been shown.
+    pub hints: bool,
+    pub hints_seen: u32,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -25,12 +28,14 @@ impl Default for Settings {
             reduce_flashes: false,
             postfx: true,
             muted: false,
+            hints: true,
+            hints_seen: 0,
         }
     }
 }
 impl Settings {
     pub const FILE: &str = "settings.json";
-    pub const ROWS: usize = 6;
+    pub const ROWS: usize = 7;
 
     pub fn load() -> Self {
         crate::storage::read(Self::FILE)
@@ -82,6 +87,13 @@ impl Settings {
             3 => self.hitstop = !self.hitstop,
             4 => self.reduce_flashes = !self.reduce_flashes,
             5 => self.postfx = !self.postfx,
+            6 => {
+                // Switching tips back on replays them from the start.
+                self.hints = !self.hints;
+                if self.hints {
+                    self.hints_seen = 0;
+                }
+            }
             _ => {}
         }
     }
@@ -113,10 +125,15 @@ impl Settings {
                 RowValue::Switch(self.reduce_flashes),
                 "Dims impact flashes, shockwave rings, and combat light bursts.",
             ),
-            _ => (
+            5 => (
                 "Lighting and bloom",
                 RowValue::Switch(self.postfx),
                 "Post-processing, also toggled with F9. Turn off on slower graphics.",
+            ),
+            _ => (
+                "Gameplay tips",
+                RowValue::Switch(self.hints),
+                "One-time tips when a mechanic first matters. Switch on again to replay them.",
             ),
         }
     }
@@ -139,7 +156,7 @@ mod tests {
         assert_eq!(s.effects_gain(), 0.35);
         assert_eq!(s.shake_scale(), 1.);
         assert_eq!(s.flash_scale(), 1.);
-        assert!(s.hitstop && s.postfx && !s.muted);
+        assert!(s.hitstop && s.postfx && !s.muted && s.hints);
     }
 
     #[test]
@@ -158,6 +175,13 @@ mod tests {
         assert!(s.flash_scale() < 1.);
         s.muted = true;
         assert_eq!(s.music_gain() + s.effects_gain(), 0.);
+        s.hints_seen = 0b101;
+        s.adjust(6, 1);
+        assert!(!s.hints);
+        assert_eq!(s.hints_seen, 0b101, "switching tips off keeps progress");
+        s.adjust(6, 1);
+        assert!(s.hints);
+        assert_eq!(s.hints_seen, 0, "switching tips on replays them");
     }
 
     #[test]

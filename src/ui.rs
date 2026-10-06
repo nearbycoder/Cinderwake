@@ -118,8 +118,14 @@ impl Ui {
         );
         self.centered_at(
             &format!(
-                "{} descents   /   {} embers kept",
-                g.save.runs, g.save.embers
+                "{} {}   /   {} embers kept",
+                g.save.runs,
+                if g.save.runs == 1 {
+                    "descent"
+                } else {
+                    "descents"
+                },
+                g.save.embers
             ),
             354.,
             579.,
@@ -127,7 +133,7 @@ impl Ui {
             c(TEAL),
         );
         self.centered_at(
-            "A / D  Move   SPACE  Jump   J  Strike",
+            "A / D  Move   SPACE  Jump   J  Strike   SHIFT  Dodge   L  Parry",
             354.,
             618.,
             15.,
@@ -304,6 +310,15 @@ impl Ui {
             );
         }
         if g.screen == Screen::Playing && !g.map {
+            if let Some((hint, _)) = g.hint {
+                let text = hint.text();
+                // The plaque's ornate end caps need generous padding.
+                let width = measure_text(text, None, 16, 1.).width + 176.;
+                let rect = Rect::new(640. - width / 2., 172., width, 42.);
+                self.skin.plaque(rect);
+                self.text("TIP", rect.x + 62., rect.y + 27., 15., c(TEAL));
+                self.text(text, rect.x + 110., rect.y + 27., 16., c(PALE));
+            }
             if let Some(i) = g.nearby() {
                 let text = match g.level.objects[i].kind {
                     ObjectKind::Exit => "E   RING THE BELLGATE",
@@ -440,24 +455,24 @@ impl Ui {
     fn options(&self, g: &Game) {
         self.modal(Rect::new(255., 114., 770., 493.), "Options", 221.);
         for row in 0..Settings::ROWS {
-            let y = 246. + row as f32 * 40.;
+            let y = 240. + row as f32 * 34.;
             let selected = row == g.options_row;
             let (label, value, _) = g.settings.row(row);
             if selected {
-                draw_rectangle(300., y - 3., 680., 34., c(TEAL).with_alpha(0.12));
-                self.text(">", 312., y + 20., 19., c(TEAL));
+                draw_rectangle(300., y - 4., 680., 31., c(TEAL).with_alpha(0.12));
+                self.text(">", 312., y + 18., 19., c(TEAL));
             }
             self.text(
                 label,
                 336.,
-                y + 20.,
+                y + 18.,
                 19.,
                 c(if selected { GOLD } else { PALE }),
             );
             match value {
                 RowValue::Level(level) => {
                     for i in 0..10 {
-                        let rect = Rect::new(640. + i as f32 * 24., y + 9., 19., 12.);
+                        let rect = Rect::new(640. + i as f32 * 24., y + 7., 19., 12.);
                         let color = if i < level {
                             c(TEAL)
                         } else {
@@ -468,7 +483,7 @@ impl Ui {
                     self.text(
                         &format!("{}%", level as u32 * 10),
                         892.,
-                        y + 20.,
+                        y + 18.,
                         17.,
                         c(PALE),
                     );
@@ -477,7 +492,7 @@ impl Ui {
                     self.text(
                         if on { "ON" } else { "OFF" },
                         640.,
-                        y + 20.,
+                        y + 18.,
                         19.,
                         c(if on { TEAL } else { MUTED }),
                     );

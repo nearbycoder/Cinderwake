@@ -32,6 +32,41 @@ pub enum Screen {
     Dead,
     Victory,
 }
+/// One-time tips, each shown the first time its mechanic becomes relevant.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Hint {
+    Climb,
+    Strike,
+    Parry,
+    Drop,
+    Heal,
+    Tools,
+}
+impl Hint {
+    /// Display priority: tips about immediate danger come first.
+    pub const ALL: [Hint; 6] = [
+        Self::Strike,
+        Self::Parry,
+        Self::Heal,
+        Self::Climb,
+        Self::Drop,
+        Self::Tools,
+    ];
+    pub fn bit(self) -> u32 {
+        1 << self as u32
+    }
+    pub fn text(self) -> &'static str {
+        match self {
+            Self::Climb => "SPACE jumps. Press it again in the air to double jump onto higher ledges.",
+            Self::Strike => "J or left click strikes; hold to chain a combo. SHIFT dodges through attacks.",
+            Self::Parry => "Face a bolt and press L or right click to parry it back at the shooter.",
+            Self::Drop => "S + SPACE drops through a ledge. Press S in mid-air to slam down.",
+            Self::Heal => "F drinks a healing flask. Taking damage interrupts the drink.",
+            Self::Tools => "K glassbolt, Q fire vessel, R arc snare. Embers are lost on death until banked at a bellgate.",
+        }
+    }
+}
+pub const HINT_SECONDS: f32 = 6.;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Weapon {
     Sabre,
@@ -212,6 +247,11 @@ pub struct Game {
     pub options_row: usize,
     /// The first abandon request from the pause screen only asks for confirmation.
     pub abandon_armed: bool,
+    /// Contextual tips run only in normal play, never in practice or captures.
+    pub teach: bool,
+    /// The tip on screen and its remaining seconds.
+    pub hint: Option<(Hint, f32)>,
+    pending_hints: u32,
     pub intro: f32,
     pub route: usize,
     pub save_error: Option<String>,
@@ -321,6 +361,9 @@ impl Game {
             options_from: Screen::Title,
             options_row: 0,
             abandon_armed: false,
+            teach: false,
+            hint: None,
+            pending_hints: 0,
             intro: 4.,
             route: 0,
             save_error: None,
@@ -339,8 +382,10 @@ impl Game {
         let save = self.save.clone();
         let settings = self.settings.clone();
         let practice = self.practice;
+        let teach = self.teach;
         *self = Self::new(self.seed.wrapping_add(173), save);
         self.settings = settings;
+        self.teach = teach;
         self.practice = practice;
         self.screen = Screen::Playing;
         self.save.runs += 1;
@@ -424,6 +469,67 @@ impl Game {
             self.persist_settings();
         }
     }
+    fn queue_hint(&mut self, hint: Hint) {
+        if self.settings.hints_seen & hint.bit() == 0 {
+            self.pending_hints |= hint.bit();
+        }
+    }
+    /// Notices relevant mechanics, then shows one queued tip at a time once
+    /// the biome title has faded. Tips never pause play.
+    fn update_hints(&mut self, dt: f32) {
+        if !self.teach || !self.settings.hints {
+            self.hint = None;
+            self.pending_hints = 0;
+            return;
+        }
+        let p = &self.player;
+        let overhead = |r: &Rect| {
+            r.y < p.pos.y - 30.
+                && r.y > p.pos.y - 100.
+                && r.x < p.pos.x + 30.
+                && r.x + r.w > p.pos.x - 30.
+        };
+        let mut seen = vec![];
+        if p.ground && self.level.platforms.iter().any(overhead) {
+            seen.push(Hint::Climb);
+        }
+        if self.level.enemies.iter().any(|e| {
+            e.hp > 0. && (e.pos.x - p.pos.x).abs() < 170. && (e.pos.y - p.pos.y).abs() < 45.
+        }) {
+            seen.push(Hint::Strike);
+        }
+        if self.shots.iter().any(|s| {
+            s.hostile && (s.pos - p.pos).length() < 220. && s.vel.x * (p.pos.x - s.pos.x) > 0.
+        }) {
+            seen.push(Hint::Parry);
+        }
+        if p.ground && p.pos.y < FLOOR - 20. {
+            seen.push(Hint::Drop);
+        }
+        if p.hp < p.max_hp * 0.6 && p.flasks > 0 {
+            seen.push(Hint::Heal);
+        }
+        for hint in seen {
+            self.queue_hint(hint);
+        }
+        if let Some((_, remaining)) = &mut self.hint {
+            *remaining -= dt;
+            if *remaining <= 0. {
+                self.hint = None;
+            }
+        }
+        if self.hint.is_none() && self.intro <= 0. {
+            if let Some(next) = Hint::ALL
+                .into_iter()
+                .find(|h| self.pending_hints & h.bit() != 0)
+            {
+                self.pending_hints &= !next.bit();
+                self.settings.hints_seen |= next.bit();
+                self.hint = Some((next, HINT_SECONDS));
+                self.persist_settings();
+            }
+        }
+    }
     pub fn persist_settings(&mut self) {
         if !self.practice {
             if let Err(e) = self.settings.store() {
@@ -456,6 +562,7 @@ impl Game {
         self.sounds.push(Sfx::Hit);
         self.shake = 3.;
         if dead {
+            self.queue_hint(Hint::Tools);
             self.player.kills += 1;
             self.player.gold += if boss { 300 } else { 18 };
             self.player.embers += if boss { 25 } else { 3 };
@@ -494,6 +601,7 @@ impl Game {
         }
         self.run_time += dt;
         self.intro = (self.intro - dt).max(0.);
+        self.update_hints(dt);
         if self.hitstop > 0. {
             self.hitstop -= dt;
             return;
@@ -1606,6 +1714,108 @@ mod tests {
         g.screen = Screen::Playing;
         g.open_options();
         assert_eq!(g.screen, Screen::Playing, "options open only from menus");
+    }
+    fn tutor() -> Game {
+        let mut g = game();
+        g.teach = true;
+        g.intro = 0.;
+        g
+    }
+    fn idle(g: &mut Game, seconds: f32) {
+        for _ in 0..(seconds / STEP) as u32 {
+            g.tick(STEP, Input::default());
+        }
+    }
+    #[test]
+    fn each_tip_fires_once_when_its_mechanic_matters() {
+        let mut g = tutor();
+        g.level.platforms.retain(|r| r.y >= FLOOR);
+        idle(&mut g, 0.5);
+        assert!(g.hint.is_none(), "nothing relevant yet");
+        g.level.enemies = vec![Enemy::new(
+            g.player.pos.x + 120.,
+            FLOOR,
+            EnemyKind::Archer,
+            0,
+        )];
+        g.player.hp = g.player.max_hp * 0.5;
+        g.tick(STEP, Input::default());
+        assert_eq!(g.hint.map(|h| h.0), Some(Hint::Strike));
+        assert!(g.settings.hints_seen & Hint::Strike.bit() != 0);
+        g.level.enemies.clear();
+        idle(&mut g, HINT_SECONDS + 0.1);
+        assert_eq!(g.hint.map(|h| h.0), Some(Hint::Heal), "queued tips follow");
+        idle(&mut g, HINT_SECONDS + 0.1);
+        assert!(g.hint.is_none());
+        // A shown tip never returns, even after the settings round-trip a restart does.
+        let stored = serde_json::to_vec(&g.settings).unwrap();
+        g.settings = serde_json::from_slice(&stored).unwrap();
+        g.start();
+        g.intro = 0.;
+        g.level.platforms.retain(|r| r.y >= FLOOR);
+        g.level.enemies = vec![Enemy::new(
+            g.player.pos.x + 120.,
+            FLOOR,
+            EnemyKind::Warden,
+            0,
+        )];
+        g.player.hp = g.player.max_hp * 0.5;
+        idle(&mut g, 1.);
+        assert!(g.hint.is_none());
+    }
+    #[test]
+    fn kills_and_hostile_bolts_queue_their_tips() {
+        let mut g = tutor();
+        g.level.enemies = vec![Enemy::new(400., FLOOR, EnemyKind::Moth, 0)];
+        g.hit(0, 1000., 1., false);
+        g.tick(STEP, Input::default());
+        assert_eq!(g.hint.map(|h| h.0), Some(Hint::Tools));
+        g.hint = None;
+        g.shots.push(Shot {
+            pos: g.player.pos + vec2(150., -12.),
+            vel: vec2(-200., 0.),
+            life: 2.,
+            damage: 13.,
+            hostile: true,
+            kind: 0,
+        });
+        g.tick(STEP, Input::default());
+        assert_eq!(g.hint.map(|h| h.0), Some(Hint::Parry));
+    }
+    #[test]
+    fn ledges_above_and_underfoot_teach_climbing_and_dropping() {
+        let mut g = tutor();
+        let x = g.player.pos.x;
+        g.level.platforms.retain(|r| r.y >= FLOOR);
+        g.level
+            .platforms
+            .push(Rect::new(x - 40., FLOOR - 60., 80., 10.));
+        g.tick(STEP, Input::default());
+        assert_eq!(g.hint.map(|h| h.0), Some(Hint::Climb));
+        g.hint = None;
+        g.level
+            .platforms
+            .push(Rect::new(x - 40., Level::UPPER, 80., 10.));
+        g.player.pos.y = Level::UPPER;
+        g.tick(STEP, Input::default());
+        assert_eq!(g.hint.map(|h| h.0), Some(Hint::Drop));
+    }
+    #[test]
+    fn tips_stay_silent_when_disabled_or_practising() {
+        for (teach, enabled) in [(false, true), (true, false)] {
+            let mut g = tutor();
+            g.teach = teach;
+            g.settings.hints = enabled;
+            g.level.enemies = vec![Enemy::new(
+                g.player.pos.x + 120.,
+                FLOOR,
+                EnemyKind::Warden,
+                0,
+            )];
+            idle(&mut g, 0.5);
+            assert!(g.hint.is_none());
+            assert_eq!(g.settings.hints_seen, 0);
+        }
     }
     #[test]
     fn death_loses_unbanked_embers_only() {

@@ -157,7 +157,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 13] = [
+const UI_GALLERY_NAMES: [&str; 14] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -171,6 +171,7 @@ const UI_GALLERY_NAMES: [&str; 13] = [
     "ui-10-crown-boss",
     "ui-11-options",
     "ui-12-paused-abandon",
+    "ui-13-tip",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -258,6 +259,7 @@ fn ui_fixture(index: usize) -> Game {
             g.screen = Screen::Paused;
             g.request_abandon();
         }
+        13 => g.hint = Some((Hint::Parry, HINT_SECONDS)),
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
     g
@@ -374,6 +376,7 @@ async fn main() {
     g.practice = practice;
     if !practice {
         g.settings = settings::Settings::load();
+        g.teach = true;
     }
     // A launch flag disables lighting for this session without saving the choice.
     if no_postfx {
