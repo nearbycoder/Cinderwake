@@ -106,7 +106,15 @@ flowchart LR
 
 Death resets equipment, run stats, and carried embers. Banked embers, permanent upgrades, the Crown Rune, and victory counts survive. Sealed caches open after eight guardian kills or with the rune on a later run.
 
-Progress is stored at `~/Library/Application Support/Cinderwake/progress.json`. Move that file aside to reset progression. Capture and practice modes do not read or write your save.
+Progress is stored in `progress.json` in your per-user data folder:
+
+| Platform | Location |
+| --- | --- |
+| macOS | `~/Library/Application Support/Cinderwake/` |
+| Linux | `$XDG_DATA_HOME/cinderwake/` (usually `~/.local/share/cinderwake/`) |
+| Windows | `%APPDATA%\Cinderwake\` (not yet tested on Windows) |
+
+Move that file aside to reset progression. On Linux, a save left at the old macOS-style path by earlier builds is still read until a new one is written. Capture and practice modes do not read or write your save.
 
 ## Controls
 

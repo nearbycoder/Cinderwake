@@ -46,7 +46,8 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/ui.rs`](../src/ui.rs) | HUD, interaction prompts, atlas, title screen, and menus |
 | [`src/ui_skin.rs`](../src/ui_skin.rs) | Generated UI atlas, nine-slice frames, gauges, icons, and crest |
 | [`src/audio.rs`](../src/audio.rs) | Embedded audio, effect dispatch, and music controls |
-| [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress and atomic replacement |
+| [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress |
+| [`src/storage.rs`](../src/storage.rs) | Per-platform data directory and atomic file replacement |
 
 Macroquad provides windowing, graphics, input, and audio. Cinderwake does not implement its own low-level graphics backend.
 
@@ -74,15 +75,17 @@ The route is Aqueduct → Conservatory **or** Foundry → Crown, with a Keeper s
 
 ### Save behavior
 
-Progress lives at:
+Progress lives in `progress.json` inside the per-user data directory chosen by [`src/storage.rs`](../src/storage.rs):
 
 ```text
-~/Library/Application Support/Cinderwake/progress.json
+macOS    ~/Library/Application Support/Cinderwake/
+Linux    $XDG_DATA_HOME/cinderwake/   (falls back to ~/.local/share/cinderwake/)
+Windows  %APPDATA%\Cinderwake\
 ```
 
 The schema uses defaults for missing fields. Saving writes a temporary JSON file and renames it over the prior file; unreadable or invalid saves currently fall back to default progress. To reset a save, move the file aside before launching.
 
-The path is currently macOS-shaped on every platform. Alternate desktop platforms have not been validated. Practice, gallery, and capture modes neither read nor write progression.
+Earlier builds used the macOS path on every platform. If no save exists at the new location, the old one is read, and the next save is written to the new location. The Linux path was verified by launching the release build with a temporary `XDG_DATA_HOME`; the Windows path is covered by unit tests only. Practice, gallery, and capture modes neither read nor write progression.
 
 ## Animation and rendering
 
@@ -213,7 +216,7 @@ This is a playable prototype, with these limits visible in the current implement
 - One final boss, one ending, and a limited mutation and upgrade economy. No blueprint unlock tree, extensive affixes/synergies, or traversal-rune progression.
 - A complete atlas without fog of war; no challenge modes or DLC systems.
 - Keyboard/mouse controls without gamepad support or rebinding; no localization or extensive accessibility settings.
-- macOS Apple Silicon verification only, a macOS-specific save path, and local ad-hoc packaging without notarization.
+- macOS Apple Silicon and Linux verification only, and local ad-hoc macOS packaging without notarization.
 - Prototype audio, balancing, encounter variety, and animation coverage. Visual captures and automated tests are complementary checks, not a guarantee of zero defects.
 
 See the [README](../README.md) for the playable features, controls, screenshots, and demo.

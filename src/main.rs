@@ -9,6 +9,7 @@ mod postprocess;
 mod render;
 mod save;
 mod scenery;
+mod storage;
 mod traversal_capture;
 mod ui;
 mod ui_skin;

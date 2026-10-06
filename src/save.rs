@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{io, path::PathBuf};
+use std::io;
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Save {
@@ -12,24 +12,14 @@ pub struct Save {
     pub best_kills: u32,
 }
 impl Save {
-    pub fn path() -> PathBuf {
-        let base = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."));
-        base.join("Library/Application Support/Cinderwake/progress.json")
-    }
+    pub const FILE: &str = "progress.json";
     pub fn load() -> Self {
-        std::fs::read(Self::path())
-            .ok()
+        crate::storage::read(Self::FILE)
             .and_then(|s| serde_json::from_slice(&s).ok())
             .unwrap_or_default()
     }
     pub fn store(&self) -> io::Result<()> {
-        let path = Self::path();
-        std::fs::create_dir_all(path.parent().unwrap())?;
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(self)?)?;
-        std::fs::rename(tmp, path)
+        crate::storage::write(Self::FILE, &serde_json::to_vec_pretty(self)?)
     }
 }
 #[cfg(test)]
