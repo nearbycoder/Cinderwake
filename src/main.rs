@@ -75,6 +75,13 @@ fn menus(g: &mut Game) {
         };
     }
     match g.screen {
+        Screen::Title if g.resume.is_some() => {
+            if is_key_pressed(KeyCode::Enter) {
+                g.continue_run();
+            } else if is_key_pressed(KeyCode::N) {
+                g.start();
+            }
+        }
         Screen::Title | Screen::Dead | Screen::Victory => {
             if is_key_pressed(KeyCode::Enter) {
                 g.start();
@@ -199,7 +206,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 18] = [
+const UI_GALLERY_NAMES: [&str; 19] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -218,6 +225,7 @@ const UI_GALLERY_NAMES: [&str; 18] = [
     "ui-15-atlas-fog",
     "ui-16-controls",
     "ui-17-rebound-hud",
+    "ui-18-title-continue",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -341,6 +349,12 @@ fn ui_fixture(index: usize) -> Game {
             }
             g.hint = Some((Hint::Strike, HINT_SECONDS));
             g.player.pos = vec2(905., world::FLOOR);
+        }
+        18 => {
+            g.screen = Screen::Title;
+            g.stage = 1;
+            g.level = world::Level::generate(4017, world::Biome::Foundry, world::Threat::BASE);
+            g.resume = Some(g.checkpoint());
         }
         14 => {
             g.screen = Screen::Reliquary;
@@ -472,6 +486,7 @@ async fn main() {
     if !practice {
         g.settings = settings::Settings::load();
         g.teach = true;
+        g.resume = save::Checkpoint::load();
     }
     // A launch flag disables lighting for this session without saving the choice.
     if no_postfx {

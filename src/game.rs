@@ -2,7 +2,7 @@ pub use crate::particles::Particle;
 use crate::{
     controls::{Action, Bindings},
     particles::{self, Effect, VisualRng},
-    save::Save,
+    save::{Checkpoint, Save},
     settings::Settings,
     world::*,
 };
@@ -111,7 +111,7 @@ impl Screen {
         )
     }
 }
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Weapon {
     Sabre,
     Glaive,
@@ -354,6 +354,8 @@ pub struct Game {
     pub intro: f32,
     pub route: usize,
     pub save_error: Option<String>,
+    /// A saved run the title screen offers to continue.
+    pub resume: Option<Checkpoint>,
     pub practice: bool,
     last_safe_pos: Vec2,
 }
@@ -473,6 +475,7 @@ impl Game {
             intro: 4.,
             route: 0,
             save_error: None,
+            resume: None,
             practice: false,
             last_safe_pos,
         }
@@ -485,6 +488,8 @@ impl Game {
         }
     }
     pub fn start(&mut self) {
+        // A new descent replaces any saved run.
+        self.clear_checkpoint();
         let save = self.save.clone();
         let settings = self.settings.clone();
         let practice = self.practice;
@@ -554,6 +559,7 @@ impl Game {
         }
     }
     fn die(&mut self) {
+        self.clear_checkpoint();
         self.screen = Screen::Dead;
         self.save.best_kills = self.save.best_kills.max(self.player.kills);
         self.player.embers = 0;
@@ -1470,12 +1476,14 @@ impl Game {
                     self.player.embers = 0;
                     self.save.best_kills = self.save.best_kills.max(self.player.kills);
                     self.persist();
+                    self.clear_checkpoint();
                     self.screen = Screen::Victory;
                 } else {
                     self.save.embers += self.player.embers;
                     self.player.embers = 0;
                     self.persist();
                     self.screen = Screen::Camp;
+                    self.save_checkpoint();
                 }
             }
         }
@@ -1554,6 +1562,10 @@ impl Game {
             }
         }
         self.persist();
+        if self.screen == Screen::Camp {
+            // Keep the saved run in step with what was just bought.
+            self.save_checkpoint();
+        }
         self.sounds.push(Sfx::Bank);
         self.notify("The Keeper binds your choice.");
     }
@@ -1566,6 +1578,83 @@ impl Game {
         } else {
             Biome::Foundry
         };
+        self.enter(biome);
+        self.save_checkpoint();
+    }
+    /// The current run as a checkpoint.
+    pub fn checkpoint(&self) -> Checkpoint {
+        let p = &self.player;
+        Checkpoint {
+            seed: self.seed,
+            stage: self.stage,
+            biome: self.level.biome,
+            at_keeper: self.screen == Screen::Camp,
+            weapon: p.weapon,
+            tier: p.tier,
+            power: p.power,
+            gold: p.gold,
+            kills: p.kills,
+            mutation: p.mutation,
+            max_hp: p.max_hp,
+            run_time: self.run_time,
+        }
+    }
+    fn save_checkpoint(&mut self) {
+        if !self.practice {
+            if let Err(e) = self.checkpoint().store() {
+                self.save_error = Some(e.to_string());
+            }
+        }
+    }
+    fn clear_checkpoint(&mut self) {
+        self.resume = None;
+        if !self.practice {
+            if let Err(e) = Checkpoint::clear() {
+                self.save_error = Some(e.to_string());
+            }
+        }
+    }
+    /// Restores the saved run at the start of its biome, or at the Keeper.
+    /// Embers carried past the last bellgate were never banked, so they're
+    /// gone, as on death. Continuing doesn't count as a new descent.
+    pub fn continue_run(&mut self) {
+        let Some(c) = self.resume.take() else {
+            return;
+        };
+        let (save, settings) = (self.save.clone(), self.settings.clone());
+        let (practice, teach) = (self.practice, self.teach);
+        *self = Self::new(c.seed, save);
+        self.settings = settings;
+        self.practice = practice;
+        self.teach = teach;
+        self.stage = c.stage;
+        self.enter(c.biome);
+        let p = &mut self.player;
+        p.weapon = c.weapon;
+        p.tier = c.tier;
+        p.power = c.power;
+        p.gold = c.gold;
+        p.kills = c.kills;
+        p.mutation = c.mutation;
+        p.max_hp = c.max_hp;
+        p.hp = c.max_hp;
+        self.run_time = c.run_time;
+        if c.at_keeper {
+            self.place_player(
+                self.level
+                    .objects
+                    .iter()
+                    .find(|o| o.kind == ObjectKind::Exit)
+                    .map_or(self.level.spawn, |o| o.pos),
+            );
+            self.screen = Screen::Camp;
+            self.intro = 0.;
+        } else {
+            self.notify("The descent continues. Embers carried since the last bellgate are lost.");
+        }
+    }
+    /// Generates this stage's level in `biome` and arrives at its start.
+    fn enter(&mut self, biome: Biome) {
         self.level = Level::generate(
             self.seed + self.stage as u64 * 53,
             biome,
@@ -2465,6 +2554,149 @@ mod tests {
         g.screen = Screen::Reliquary;
         g.choose_weapon(false);
         assert_eq!(heard(&mut g), vec![Sfx::Select]);
+    }
+    /// A normal (non-practice) run; tests store files in memory.
+    fn saved_run() -> Game {
+        let mut g = Game::new(42, Save::default());
+        g.start();
+        g.level.enemies.clear();
+        g
+    }
+    fn use_exit(g: &mut Game) {
+        let exit = g.level.objects.iter().find(|o| o.kind == ObjectKind::Exit);
+        g.place_player(exit.unwrap().pos - vec2(10., 0.));
+        g.tick(
+            STEP,
+            Input {
+                interact: true,
+                ..Default::default()
+            },
+        );
+    }
+    fn stored_checkpoint() -> Option<Checkpoint> {
+        Checkpoint::load()
+    }
+
+    #[test]
+    fn runs_continue_from_their_last_biome_or_keeper() {
+        let mut g = saved_run();
+        assert!(
+            stored_checkpoint().is_none(),
+            "nothing to continue in the first biome"
+        );
+        let p = &mut g.player;
+        (p.weapon, p.tier, p.power, p.gold, p.kills, p.mutation) =
+            (Weapon::Glaive, 3, [2, 1, 3], 77, 9, 2);
+        p.max_hp = 158.;
+        p.embers = 6;
+        g.run_time = 201.;
+        use_exit(&mut g);
+        assert_eq!(g.screen, Screen::Camp);
+        let at_keeper = stored_checkpoint().expect("saved at the Keeper");
+        assert!(at_keeper.at_keeper);
+        assert_eq!((at_keeper.stage, at_keeper.biome), (0, Biome::Aqueduct));
+
+        // Buying from the Keeper updates the saved run.
+        g.save.embers = 100;
+        g.buy(0);
+        assert_eq!(stored_checkpoint().unwrap().max_hp, 173.);
+
+        g.route = 1;
+        g.travel();
+        let arrived = stored_checkpoint().expect("saved on arrival");
+        assert!(!arrived.at_keeper);
+        assert_eq!((arrived.stage, arrived.biome), (1, Biome::Foundry));
+        let level = g.level.clone();
+        g.player.embers = 11; // carried, not banked
+        g.player.hp = 20.;
+        let runs = g.save.runs;
+
+        // A later launch offers the run and restores it.
+        let mut next = Game::new(9999, g.save.clone());
+        next.resume = stored_checkpoint();
+        next.continue_run();
+        assert_eq!(next.screen, Screen::Playing);
+        assert_eq!((next.stage, next.level.biome), (1, Biome::Foundry));
+        assert_eq!(next.level.platforms, level.platforms);
+        assert_eq!(
+            next.level
+                .enemies
+                .iter()
+                .map(|e| (e.pos, e.kind, e.max_hp))
+                .collect::<Vec<_>>(),
+            level
+                .enemies
+                .iter()
+                .map(|e| (e.pos, e.kind, e.max_hp))
+                .collect::<Vec<_>>()
+        );
+        let p = &next.player;
+        assert_eq!(
+            (p.weapon, p.tier, p.power, p.gold, p.kills, p.mutation),
+            (Weapon::Glaive, 3, [2, 1, 3], 77, 9, 2)
+        );
+        assert_eq!((p.max_hp, p.hp, p.embers), (173., 173., 0));
+        assert_eq!(p.pos, next.level.spawn);
+        assert!((next.run_time - 201.).abs() < 0.1, "{}", next.run_time);
+        assert_eq!(next.save.runs, runs, "continuing isn't a new descent");
+        assert!(next.resume.is_none());
+
+        // Continuing at the Keeper returns to the Keeper, ready to travel.
+        let mut keeper = Game::new(1, Save::default());
+        keeper.resume = Some(at_keeper);
+        keeper.continue_run();
+        assert_eq!(keeper.screen, Screen::Camp);
+        keeper.route = 0;
+        keeper.travel();
+        assert_eq!((keeper.stage, keeper.level.biome), (1, Biome::Garden));
+    }
+
+    #[test]
+    fn ending_or_replacing_a_run_deletes_its_checkpoint() {
+        let reach_keeper = || {
+            let mut g = saved_run();
+            use_exit(&mut g);
+            assert!(stored_checkpoint().is_some());
+            g
+        };
+        // Death.
+        let mut g = reach_keeper();
+        g.travel();
+        g.hurt(10_000., 1.);
+        assert_eq!(g.screen, Screen::Dead);
+        assert!(stored_checkpoint().is_none());
+        // Abandoning from the pause screen.
+        let mut g = reach_keeper();
+        g.travel();
+        g.screen = Screen::Paused;
+        g.request_abandon();
+        g.request_abandon();
+        assert!(stored_checkpoint().is_none());
+        // Starting a new descent from the title instead of continuing.
+        let mut g = reach_keeper();
+        g.resume = stored_checkpoint();
+        g.screen = Screen::Title;
+        g.start();
+        assert!(stored_checkpoint().is_none() && g.resume.is_none());
+        // Victory.
+        let mut g = reach_keeper();
+        g.travel();
+        g.screen = Screen::Camp;
+        g.travel();
+        assert_eq!(g.level.biome, Biome::Crown);
+        g.level.enemies.clear();
+        use_exit(&mut g);
+        assert_eq!(g.screen, Screen::Victory);
+        assert!(stored_checkpoint().is_none());
+    }
+
+    #[test]
+    fn practice_runs_never_save_a_checkpoint() {
+        let mut g = game();
+        use_exit(&mut g);
+        g.travel();
+        assert_eq!(g.stage, 1);
+        assert!(stored_checkpoint().is_none());
     }
     #[test]
     fn death_loses_unbanked_embers_only() {

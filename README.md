@@ -102,7 +102,7 @@ It contains the executable, licenses, and a short README. It is for local sharin
 python3 -m http.server -d dist/web 8080   # then open http://localhost:8080
 ```
 
-The browser build is a single WebAssembly file of about 52 MB, because all the art and audio are embedded. Progress is kept in the browser's `localStorage`. It has been tested only in headless Chrome on Linux, at 1× and 1.25× pixel ratios: the title screen, starting a run, movement, the atlas, pausing, and keeping progress across a reload. Headless Chrome also showed the right music loop starting on the title and when a run begins, but nobody has listened to the browser build. Frame rate, Firefox, Safari, and mobile browsers have not been checked. No hosted version is published.
+The browser build is a single WebAssembly file of about 52 MB, because all the art and audio are embedded. Progress, options, and a run in progress are kept in the browser's `localStorage`, so closing the tab mid-run doesn't lose the run. It has been tested only in headless Chrome on Linux, at 1× and 1.25× pixel ratios: the title screen, starting a run, movement, the atlas, pausing, and keeping progress across a reload. Headless Chrome also showed the right music loop starting on the title and when a run begins, but nobody has listened to the browser build. Frame rate, Firefox, Safari, and mobile browsers have not been checked. No hosted version is published.
 
 See [build and verification notes](docs/ENGINE.md#build-and-verification) for more detail.
 
@@ -125,7 +125,7 @@ flowchart LR
 3. **Choose your branch.** Take the Conservatory or the Foundry, then continue to the Crown.
 4. **Defeat the Regent.** The boss unlocks the Crown Rune; the final gate completes the run. A brute and an archer guard the gallery on the way to the Regent. Enemies grow tougher with each stage of a run, and later runs also scale enemy health with recorded victories.
 
-Death resets equipment, run stats, and carried embers. Banked embers, permanent upgrades, the Crown Rune, and victory counts survive. Sealed caches open after eight guardian kills or with the rune on a later run.
+Death resets equipment, run stats, and carried embers. Banked embers, permanent upgrades, the Crown Rune, and victory counts survive. Closing the game partway through doesn't end the run: arriving in each biome and reaching the Keeper save it, and the title screen offers **Enter** to continue from that point or **N** for a new descent. Embers carried since the last bellgate are lost when you continue, as on death. Sealed caches open after eight guardian kills or with the rune on a later run.
 
 Progress is stored in `progress.json` in your per-user data folder:
 
@@ -135,7 +135,7 @@ Progress is stored in `progress.json` in your per-user data folder:
 | Linux | `$XDG_DATA_HOME/cinderwake/` (usually `~/.local/share/cinderwake/`) |
 | Windows | `%APPDATA%\Cinderwake\` (not yet tested on Windows) |
 
-Move that file aside to reset progression. Options are saved next to it in `settings.json`. On Linux, a save left at the old macOS-style path by earlier builds is still read until a new one is written. Capture and practice modes do not read or write your save.
+Move that file aside to reset progression. Options are saved next to it in `settings.json`, and a run in progress in `run.json`. On Linux, a save left at the old macOS-style path by earlier builds is still read until a new one is written. Capture and practice modes do not read or write your save.
 
 ## Controls
 

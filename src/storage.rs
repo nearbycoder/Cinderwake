@@ -2,10 +2,38 @@
 //! the platform's per-user data directory and replace files atomically; the
 //! browser build stores the same bytes in `localStorage` (see `web/`).
 #[cfg(target_arch = "wasm32")]
-pub use web::{read, write};
+pub use web::{read, remove, write};
 
-#[cfg(not(target_arch = "wasm32"))]
-pub use desktop::{read, write};
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
+pub use desktop::{read, remove, write};
+
+// Tests use a per-thread in-memory store, so no test can touch a real data
+// folder. The desktop backend is still tested directly below.
+#[cfg(test)]
+pub use memory::{read, remove, write};
+
+#[cfg(test)]
+mod memory {
+    use std::{cell::RefCell, collections::HashMap, io};
+
+    thread_local! {
+        static FILES: RefCell<HashMap<String, Vec<u8>>> = RefCell::new(HashMap::new());
+    }
+
+    pub fn read(name: &str) -> Option<Vec<u8>> {
+        FILES.with(|f| f.borrow().get(name).cloned())
+    }
+
+    pub fn write(name: &str, bytes: &[u8]) -> io::Result<()> {
+        FILES.with(|f| f.borrow_mut().insert(name.into(), bytes.to_vec()));
+        Ok(())
+    }
+
+    pub fn remove(name: &str) -> io::Result<()> {
+        FILES.with(|f| f.borrow_mut().remove(name));
+        Ok(())
+    }
+}
 
 #[cfg(target_arch = "wasm32")]
 mod web {
@@ -21,6 +49,7 @@ mod web {
             value: *const u8,
             value_len: u32,
         ) -> i32;
+        fn cinderwake_storage_remove(key: *const u8, key_len: u32);
     }
 
     /// Lets the JS plugin confirm that it matches this build.
@@ -63,6 +92,13 @@ mod web {
         } else {
             Err(io::Error::other("browser storage is unavailable"))
         }
+    }
+
+    pub fn remove(name: &str) -> io::Result<()> {
+        let key = key(name);
+        // SAFETY: the plugin only reads the borrowed key.
+        unsafe { cinderwake_storage_remove(key.as_ptr(), key.len() as u32) };
+        Ok(())
     }
 }
 
@@ -108,6 +144,18 @@ mod desktop {
         let tmp = path.with_extension("tmp");
         std::fs::write(&tmp, bytes)?;
         std::fs::rename(tmp, path)
+    }
+
+    /// Deletes a file; one that doesn't exist counts as removed. A copy left
+    /// at the legacy path is removed too, so `read` can't fall back to it.
+    pub fn remove(name: &str) -> io::Result<()> {
+        for path in std::iter::once(data_dir().join(name)).chain(legacy_path(name)) {
+            match std::fs::remove_file(path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+                _ => {}
+            }
+        }
+        Ok(())
     }
 }
 
@@ -174,6 +222,11 @@ mod tests {
         write("probe.json", b"{\"embers\":7}").unwrap();
         assert_eq!(read("probe.json").unwrap(), b"{\"embers\":7}");
         assert!(!data_dir().join("probe.tmp").exists());
+        remove("probe.json").unwrap();
+        assert!(read("probe.json").is_none());
+        remove("probe.json").expect("removing a missing file is fine");
+        remove("legacy.json").unwrap();
+        assert!(read("legacy.json").is_none(), "the legacy copy is gone too");
         assert!(data_dir().starts_with(&root));
         std::fs::remove_dir_all(root).ok();
     }

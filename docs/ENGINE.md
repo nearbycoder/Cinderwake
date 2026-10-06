@@ -47,7 +47,7 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/ui.rs`](../src/ui.rs) | HUD, interaction prompts, atlas, title screen, and menus |
 | [`src/ui_skin.rs`](../src/ui_skin.rs) | Generated UI atlas, nine-slice frames, gauges, icons, and crest |
 | [`src/audio.rs`](../src/audio.rs) | Embedded audio, effect dispatch, per-scene music choice, and crossfades |
-| [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress |
+| [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress and the run checkpoint |
 | [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute, seen tips, and key bindings |
 | [`src/controls.rs`](../src/controls.rs) | Rebindable gameplay actions, the bindable-key table, and input gathering |
 | [`src/storage.rs`](../src/storage.rs) | Per-platform data directory, atomic file replacement, and browser `localStorage` |
@@ -77,7 +77,7 @@ The atlas (**Tab**) and the HUD minimap show platforms, objects, guardians, haza
 - **Keeper:** banked embers buy permanent vitality, permanent flask capacity, or one of two mutually exclusive run mutations. Mending heals three vitality per kill; Swift Skills makes grenade and snare cooldowns tick 35% faster. Buying a mutation again switches the active one.
 - **Victory:** defeating the Regent grants the Crown Rune; using the final gate records a win. Wins increase enemy health in later runs, on top of the per-stage scaling. The rune bypasses the eight-kill requirement on sealed caches; it is not a traversal ability.
 
-The route is Aqueduct → Conservatory **or** Foundry → Crown, with a Keeper stop between stages. Death discards carried embers, equipment, and run stats. Permanent upgrades, banked embers, the rune, and recorded run statistics persist.
+The route is Aqueduct → Conservatory **or** Foundry → Crown, with a Keeper stop between stages. A run in progress survives closing the game (see [save behavior](#save-behavior)). Death discards carried embers, equipment, and run stats. Permanent upgrades, banked embers, the rune, and recorded run statistics persist.
 
 ### Save behavior
 
@@ -90,6 +90,10 @@ Windows  %APPDATA%\Cinderwake\
 ```
 
 The schema uses defaults for missing fields. Saving writes a temporary JSON file and renames it over the prior file; unreadable or invalid saves currently fall back to default progress. To reset a save, move the file aside before launching.
+
+A run in progress is saved as `run.json` in the same folder (`cinderwake/run.json` in browser storage) by `save::Checkpoint`. It holds the run's seed, stage, biome, weapon, tier, memories, copper, mutation, maximum vitality, kills, and time, and whether it was saved at the Keeper. It's written on arrival in each biome, on reaching the Keeper, and after each Keeper purchase. It's deleted on death, abandoning, victory, and starting a new descent. If one exists at launch, the title offers **Enter** to continue and **N** to start again. Continuing regenerates the same level from the seed and stage and restores the build at full vitality and flasks, at the biome's start or on the Keeper screen. Embers carried since the last bellgate were never banked, so they're lost, as on death, and continuing doesn't count as a new descent. Quitting and continuing does restart the current biome from its entrance with the build you arrived with, so it can undo a bad fight; that is the usual trade-off for a save-on-arrival roguelite. A checkpoint that fails to parse, or names a stage and biome no run can reach, is ignored. Unit tests cover the round trip, every deletion path, practice isolation, and damaged files. In the browser build, with real key presses, an injected Keeper checkpoint continued to the Keeper, travelling saved the Foundry arrival, a reload offered and restored it, abandoning deleted it, and **N** replaced it.
+
+In test builds, `storage` keeps files in a per-thread in-memory map, so no test can write to a real data folder. The desktop backend is tested directly.
 
 Earlier builds used the macOS path on every platform. If no save exists at the new location, the old one is read, and the next save is written to the new location. The Linux path was verified by launching the release build with a temporary `XDG_DATA_HOME`; the Windows path is covered by unit tests only. Practice, gallery, and capture modes neither read nor write progression.
 
@@ -198,7 +202,7 @@ Run capture commands from the repository root. Outputs are written beneath `capt
 | `--demo` | Continuous scripted practice play | Runs until closed |
 | `--gallery` | Four staged biome views | `captures/biome-0.png` through `biome-3.png` |
 | `--sprite-preview` | Eight hero animation panels | `captures/animation-preview.png` |
-| `--ui-gallery` | Eighteen frozen, fixed-seed interface fixtures, including the options and controls pages, abandon confirmation, a tip banner, a reliquary choice, the atlas fog, and a HUD with rebound keys | `captures/ui-*.png` |
+| `--ui-gallery` | Nineteen frozen, fixed-seed interface fixtures, including the options and controls pages, abandon confirmation, a tip banner, a reliquary choice, the atlas fog, a HUD with rebound keys, and the title with a run to continue | `captures/ui-*.png` |
 | `--environment-tour` | 24 seconds of camera traversal across all four biomes | 480 PNGs at 20 fps in `captures/tour/` |
 | `--motion-capture` | 15 seconds of scripted input with live physics and combat | 300 PNGs at 20 fps in `captures/motion/` |
 | `--vertical-capture` | A complete fixed-seed Aqueduct route through all elevations | 20 PNGs per simulated second in `captures/vertical/`; about 25 seconds |

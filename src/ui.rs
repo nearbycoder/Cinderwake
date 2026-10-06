@@ -113,26 +113,44 @@ impl Ui {
             c(PALE),
         );
         self.centered_at("Defy the Regent.", 354., 455., 18., c(PALE));
-        self.button(
-            "ENTER   Begin the descent",
-            Rect::new(145., 483., 418., 64.),
+        let record = format!(
+            "{} {}   /   {} embers kept",
+            g.save.runs,
+            if g.save.runs == 1 {
+                "descent"
+            } else {
+                "descents"
+            },
+            g.save.embers
         );
-        self.centered_at(
-            &format!(
-                "{} {}   /   {} embers kept",
-                g.save.runs,
-                if g.save.runs == 1 {
-                    "descent"
-                } else {
-                    "descents"
-                },
-                g.save.embers
-            ),
-            354.,
-            579.,
-            16.,
-            c(TEAL),
-        );
+        if let Some(run) = &g.resume {
+            self.button(
+                "ENTER   Continue the descent",
+                Rect::new(145., 483., 418., 64.),
+            );
+            self.centered_at(
+                &format!(
+                    "{}  /  {}   N  New descent",
+                    run.biome.name(),
+                    if run.at_keeper {
+                        "AT THE KEEPER".to_string()
+                    } else {
+                        format!("STAGE {} OF 3", run.stage + 1)
+                    }
+                ),
+                354.,
+                574.,
+                15.,
+                c(TEAL),
+            );
+            self.centered_at(&record, 354., 596., 14., c(MUTED));
+        } else {
+            self.button(
+                "ENTER   Begin the descent",
+                Rect::new(145., 483., 418., 64.),
+            );
+            self.centered_at(&record, 354., 579., 16., c(TEAL));
+        }
         self.centered_at(
             &{
                 let k = |a| g.settings.keys.short(a);

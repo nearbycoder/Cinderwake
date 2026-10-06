@@ -38,6 +38,13 @@
           new Uint8Array(wasm_memory.buffer, out, outLen).set(encoder.encode(value).subarray(0, outLen));
         }
       };
+      importObject.env.cinderwake_storage_remove = function (key, keyLen) {
+        try {
+          window.localStorage.removeItem(text(key, keyLen));
+        } catch (_) {
+          // Nothing to remove when storage is blocked.
+        }
+      };
       importObject.env.cinderwake_storage_write = function (key, keyLen, value, valueLen) {
         try {
           window.localStorage.setItem(text(key, keyLen), text(value, valueLen));

@@ -1,9 +1,10 @@
 //! Deterministic authored-room assembly. Gameplay never depends on rendering.
 use macroquad::prelude::*;
+use serde::{Deserialize, Serialize};
 
 pub const FLOOR: f32 = 286.;
 pub const STEP: f32 = 1. / 120.;
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Biome {
     Aqueduct,
     Garden,
