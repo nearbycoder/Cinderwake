@@ -87,6 +87,14 @@ open dist/Cinderwake.app
 
 The script produces an ad-hoc signed app for local use, not a notarized public release.
 
+To build a portable Linux tarball (x86_64, glibc 2.34 or newer):
+
+```sh
+./scripts/package-linux.sh   # writes dist/cinderwake-linux-x86_64.tar.gz
+```
+
+It contains the executable, licenses, and a short README. It is for local sharing and testing, not a published release.
+
 ### In a browser (experimental)
 
 ```sh
