@@ -3,7 +3,7 @@ use macroquad::audio::*;
 pub struct Audio {
     sounds: Vec<Option<Sound>>,
     music: Option<Sound>,
-    muted: bool,
+    music_gain: f32,
 }
 impl Audio {
     pub async fn new() -> Self {
@@ -37,24 +37,25 @@ impl Audio {
         Self {
             sounds,
             music,
-            muted: false,
+            music_gain: 0.5,
         }
     }
-    pub fn update(&mut self, events: &mut Vec<Sfx>, muted: bool) {
-        if self.muted != muted {
+    /// Gains already include mute; zero silences a channel.
+    pub fn update(&mut self, events: &mut Vec<Sfx>, music_gain: f32, effects_gain: f32) {
+        if self.music_gain != music_gain {
             if let Some(s) = &self.music {
-                set_sound_volume(s, if muted { 0. } else { 0.5 });
+                set_sound_volume(s, music_gain);
             }
-            self.muted = muted;
+            self.music_gain = music_gain;
         }
         for e in events.drain(..) {
-            if !muted {
+            if effects_gain > 0. {
                 if let Some(s) = &self.sounds[e as usize] {
                     play_sound(
                         s,
                         PlaySoundParams {
                             looped: false,
-                            volume: 0.35,
+                            volume: effects_gain,
                         },
                     );
                 }

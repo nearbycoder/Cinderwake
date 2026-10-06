@@ -189,7 +189,7 @@ fn scene_lights(game: &Game, offset: Vec2) -> ([Vec4; LIGHTS], [Vec4; LIGHTS]) {
         add(
             hero.pos + vec2(hero.face * 26., -20.),
             68.,
-            0.22 * (hero.attack / 0.19),
+            0.22 * (hero.attack / 0.19) * game.settings.flash_scale(),
             vec3(1., 0.63, 0.22),
         );
     }
@@ -210,7 +210,12 @@ fn scene_lights(game: &Game, offset: Vec2) -> ([Vec4; LIGHTS], [Vec4; LIGHTS]) {
     }
     for enemy in &game.level.enemies {
         if enemy.hp > 0. && (enemy.flash > 0. || enemy.burn > 0.) {
-            add(enemy.pos - vec2(0., 20.), 42., 0.16, vec3(1., 0.49, 0.14));
+            add(
+                enemy.pos - vec2(0., 20.),
+                42.,
+                0.16 * game.settings.flash_scale(),
+                vec3(1., 0.49, 0.14),
+            );
         }
     }
     (lights, colors)

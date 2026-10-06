@@ -9,6 +9,7 @@ mod postprocess;
 mod render;
 mod save;
 mod scenery;
+mod settings;
 mod storage;
 mod traversal_capture;
 mod ui;
@@ -56,12 +57,26 @@ fn read_input() -> Input {
 }
 fn menus(g: &mut Game) {
     if is_key_pressed(KeyCode::M) {
-        g.muted = !g.muted;
+        g.settings.muted = !g.settings.muted;
+        g.persist_settings();
+    }
+    if g.screen == Screen::Options {
+        options_menu(g);
+        return;
     }
     if is_key_pressed(KeyCode::Tab) && g.screen == Screen::Playing {
         g.map = !g.map;
     }
+    if matches!(g.screen, Screen::Title | Screen::Paused) && is_key_pressed(KeyCode::O) {
+        g.open_options();
+        return;
+    }
+    if g.screen == Screen::Paused && is_key_pressed(KeyCode::X) {
+        g.request_abandon();
+        return;
+    }
     if is_key_pressed(KeyCode::Escape) {
+        g.abandon_armed = false;
         g.screen = if g.screen == Screen::Playing {
             Screen::Paused
         } else if g.screen == Screen::Paused {
@@ -109,7 +124,40 @@ fn menus(g: &mut Game) {
     }
 }
 
-const UI_GALLERY_NAMES: [&str; 11] = [
+fn options_menu(g: &mut Game) {
+    let pressed = |keys: &[KeyCode]| keys.iter().any(|k| is_key_pressed(*k));
+    if pressed(&[KeyCode::Escape, KeyCode::O]) {
+        g.close_options();
+        return;
+    }
+    let rows = settings::Settings::ROWS;
+    if pressed(&[KeyCode::W, KeyCode::Up]) {
+        g.options_row = (g.options_row + rows - 1) % rows;
+    }
+    if pressed(&[KeyCode::S, KeyCode::Down]) {
+        g.options_row = (g.options_row + 1) % rows;
+    }
+    let delta = if pressed(&[KeyCode::A, KeyCode::Left]) {
+        -1
+    } else if pressed(&[KeyCode::D, KeyCode::Right, KeyCode::Enter, KeyCode::Space]) {
+        1
+    } else {
+        0
+    };
+    if delta != 0 {
+        g.settings.adjust(g.options_row, delta);
+    }
+}
+
+/// Presentation-only camera shake, scaled by the player's comfort setting.
+fn camera_shake(g: &Game) -> Vec2 {
+    if g.shake <= 0. {
+        return Vec2::ZERO;
+    }
+    vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
+}
+
+const UI_GALLERY_NAMES: [&str; 13] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -121,6 +169,8 @@ const UI_GALLERY_NAMES: [&str; 11] = [
     "ui-08-dead",
     "ui-09-victory",
     "ui-10-crown-boss",
+    "ui-11-options",
+    "ui-12-paused-abandon",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -149,7 +199,7 @@ fn ui_fixture(index: usize) -> Game {
     g.time = 4.;
     g.run_time = 327.;
     g.intro = 0.;
-    g.muted = true;
+    g.settings.muted = true;
     match index {
         0 => g.screen = Screen::Title,
         1 => {}
@@ -196,6 +246,17 @@ fn ui_fixture(index: usize) -> Game {
                     enemy.hp = enemy.max_hp * 0.58;
                 }
             }
+        }
+        11 => {
+            g.screen = Screen::Paused;
+            g.open_options();
+            g.options_row = 2;
+            g.settings.shake = 4;
+            g.settings.reduce_flashes = true;
+        }
+        12 => {
+            g.screen = Screen::Paused;
+            g.request_abandon();
         }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
@@ -291,7 +352,7 @@ async fn main() {
     let motion_capture = args.iter().any(|s| s == "--motion-capture");
     let vertical_capture = args.iter().any(|s| s == "--vertical-capture");
     let automated = capture || motion_capture || vertical_capture;
-    let mut postfx_enabled = !args.iter().any(|s| s == "--no-postfx");
+    let no_postfx = args.iter().any(|s| s == "--no-postfx");
     let profile_render = args.iter().any(|s| s == "--profile-render");
     let demo = args.iter().any(|s| s == "--demo") || automated;
     let staged = ui_gallery || gallery || environment_tour;
@@ -311,6 +372,13 @@ async fn main() {
         },
     );
     g.practice = practice;
+    if !practice {
+        g.settings = settings::Settings::load();
+    }
+    // A launch flag disables lighting for this session without saving the choice.
+    if no_postfx {
+        g.settings.postfx = false;
+    }
     if practice {
         g.start();
     }
@@ -369,10 +437,11 @@ async fn main() {
             set_fullscreen(fullscreen);
         }
         if !staged && !automated && is_key_pressed(KeyCode::F9) {
-            postfx_enabled = !postfx_enabled;
+            g.settings.postfx = !g.settings.postfx;
+            g.persist_settings();
             g.notify(if !postfx.available() {
                 "Cinematic lighting unavailable on this graphics backend."
-            } else if postfx_enabled {
+            } else if g.settings.postfx {
                 "Cinematic lighting enabled."
             } else {
                 "Cinematic lighting disabled."
@@ -418,7 +487,10 @@ async fn main() {
         input.trap |= pending.trap;
         input.heal |= pending.heal;
         input.interact |= pending.interact;
-        let paused = matches!(g.screen, Screen::Paused | Screen::Scroll | Screen::Camp);
+        let paused = matches!(
+            g.screen,
+            Screen::Paused | Screen::Scroll | Screen::Camp | Screen::Options
+        );
         let frame_dt = if demo || environment_tour {
             1. / 60.
         } else {
@@ -450,9 +522,15 @@ async fn main() {
         } else {
             input
         };
+        let silent = automated || staged || sprite_preview;
         audio.update(
             &mut g.sounds,
-            g.muted || automated || staged || sprite_preview,
+            if silent { 0. } else { g.settings.music_gain() },
+            if silent {
+                0.
+            } else {
+                g.settings.effects_gain()
+            },
         );
         art.animate(
             &g,
@@ -472,9 +550,7 @@ async fn main() {
         }
         let mut camera = Camera2D::from_display_rect(Rect::new(0., 0., 640., 360.));
         camera.render_target = Some(target.clone());
-        if g.shake > 0. {
-            camera.target += vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35;
-        }
+        camera.target += camera_shake(&g);
         camera.target = camera.target.round();
         let mut backdrop_camera = Camera2D::from_display_rect(Rect::new(0., 0., 640., 360.));
         backdrop_camera.render_target = Some(target.clone());
@@ -504,7 +580,7 @@ async fn main() {
             set_camera(&camera);
             render::scene(&g, &art);
         }
-        let use_postfx = postfx_enabled && !sprite_preview;
+        let use_postfx = g.settings.postfx && !sprite_preview;
         if use_postfx {
             postfx.prepare(&target.texture, &g, camera_offset);
         }
@@ -642,6 +718,20 @@ async fn main() {
 #[cfg(test)]
 mod capture_tests {
     use super::*;
+
+    #[test]
+    fn shake_setting_scales_only_the_presented_camera() {
+        let mut g = Game::new(4017, save::Save::default());
+        g.time = 1.3;
+        g.shake = 6.;
+        let full = camera_shake(&g);
+        assert!(full.length() > 0.);
+        g.settings.shake = 5;
+        assert!((camera_shake(&g) - full * 0.5).length() < 1e-4);
+        g.settings.shake = 0;
+        assert_eq!(camera_shake(&g), Vec2::ZERO);
+        assert_eq!(g.shake, 6., "the simulation's shake timer is untouched");
+    }
 
     #[test]
     fn hud_viewport_covers_the_physical_frame_at_any_dpi() {

@@ -127,7 +127,7 @@ Progress is stored in `progress.json` in your per-user data folder:
 | Linux | `$XDG_DATA_HOME/cinderwake/` (usually `~/.local/share/cinderwake/`) |
 | Windows | `%APPDATA%\Cinderwake\` (not yet tested on Windows) |
 
-Move that file aside to reset progression. On Linux, a save left at the old macOS-style path by earlier builds is still read until a new one is written. Capture and practice modes do not read or write your save.
+Move that file aside to reset progression. Options are saved next to it in `settings.json`. On Linux, a save left at the old macOS-style path by earlier builds is still read until a new one is written. Capture and practice modes do not read or write your save.
 
 ## Controls
 
@@ -148,6 +148,8 @@ Move that file aside to reset progression. On Linux, a save left at the old macO
 | **Enter** | Start, continue, or restart |
 | **Tab** | Show the vertical atlas |
 | **Escape** | Pause and controls |
+| **O** | Options, from the title or pause screen |
+| **X** twice | Abandon the run, from the pause screen |
 | **M** | Mute / unmute |
 | **F9** | Toggle world lighting and bloom |
 | **F11** | Fullscreen |
@@ -173,7 +175,7 @@ The [engine guide](docs/ENGINE.md) includes the source map, rendering pipeline, 
 
 **A playable prototype under active development.** The core run loop, vertical exploration, combat, progression, and visual systems are implemented. This is an original project inspired by the action-roguelite genre, not a claim of feature parity with Dead Cells.
 
-The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. Gamepad support, control rebinding, extensive accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas is a complete survey, without fog of war. See [current boundaries](docs/ENGINE.md#current-boundaries).
+The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, and lighting; those choices are saved separately from progress. Gamepad support, control rebinding, broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas is a complete survey, without fog of war. See [current boundaries](docs/ENGINE.md#current-boundaries).
 
 To check a change locally:
 

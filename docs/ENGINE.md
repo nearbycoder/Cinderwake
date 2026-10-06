@@ -24,7 +24,7 @@ flowchart TD
     H --> O[Letterboxed native window]
 ```
 
-The simulation uses a 120 Hz fixed step independently of render cadence. Animation actions follow simulation timers, and visual effects use their own random stream so changing particle emission does not change gameplay randomness. Pause, memory-selection, and Keeper screens freeze world motion and discard pending gameplay inputs. New levels receive a short arrival fade.
+The simulation uses a 120 Hz fixed step independently of render cadence. Animation actions follow simulation timers, and visual effects use their own random stream so changing particle emission does not change gameplay randomness. Pause, options, memory-selection, and Keeper screens freeze world motion and discard pending gameplay inputs. New levels receive a short arrival fade.
 
 ### Source map
 
@@ -47,6 +47,7 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/ui_skin.rs`](../src/ui_skin.rs) | Generated UI atlas, nine-slice frames, gauges, icons, and crest |
 | [`src/audio.rs`](../src/audio.rs) | Embedded audio, effect dispatch, and music controls |
 | [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress |
+| [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute |
 | [`src/storage.rs`](../src/storage.rs) | Per-platform data directory, atomic file replacement, and browser `localStorage` |
 | [`web/`](../web/) | Browser page and storage plugin used by `scripts/build-web.sh` |
 
@@ -117,13 +118,19 @@ World post-processing has two stages:
 1. **Selective bloom:** bright pixels are blurred through separate horizontal and vertical render targets.
 2. **Composite:** the original nearest-sampled scene receives the bloom, biome color grading, a restrained vignette, and up to eight dynamic combat lights.
 
-The HUD is drawn after the world effects. Shader compilation failure falls back to the unfiltered scene. **F9** toggles post-processing in interactive play; `--no-postfx` disables it at launch, including in capture modes.
+The HUD is drawn after the world effects. Shader compilation failure falls back to the unfiltered scene. **F9** or the options page toggles post-processing in interactive play; `--no-postfx` disables it at launch, including in capture modes.
 
 ### Interface and sound
 
 Generated frame, icon, and crest atlases provide nine-slice panels, gauges, equipment slots, and plaques around live game state. The UI covers title, combat HUD, map, low health, cooldowns, pause, memory selection, Keeper purchases/routes, death, victory, and boss health.
 
 Original synthesized ambient music and nine effects are embedded with the artwork, font, and shaders. Regenerate audio with `python3 scripts/synthesize.py`. The soundtrack is a prototype soundscape, not a finished production score.
+
+### Options
+
+**O** opens the options page from the title or pause screen. **W/S** choose a row, **A/D** adjust it, and **Escape** returns and saves. Music and effects volume and screen shake run from 0 to 100% of the original mix in 10% steps; hit-stop, reduced flashes, and lighting are switches. Settings live in `settings.json` beside the progress file (or under `cinderwake/settings.json` in browser storage), are ignored by practice and capture modes, and change only presentation and comfort: shake scales the presented camera offset, not the simulation's shake timer; reduced flashes dims flash and ring particles to 30% and scales attack and burn lights. Hit-stop is the one exception: turning it off removes the 35 ms freeze when a melee strike lands, which changes simulation timing but not gameplay randomness.
+
+From the pause screen, **X** asks for confirmation and a second **X** abandons the run with the same losses as a death.
 
 ## Build and verification
 
@@ -167,7 +174,7 @@ Run capture commands from the repository root. Outputs are written beneath `capt
 | `--demo` | Continuous scripted practice play | Runs until closed |
 | `--gallery` | Four staged biome views | `captures/biome-0.png` through `biome-3.png` |
 | `--sprite-preview` | Eight hero animation panels | `captures/animation-preview.png` |
-| `--ui-gallery` | Eleven frozen, fixed-seed interface fixtures | `captures/ui-*.png` |
+| `--ui-gallery` | Thirteen frozen, fixed-seed interface fixtures, including the options page and abandon confirmation | `captures/ui-*.png` |
 | `--environment-tour` | 24 seconds of camera traversal across all four biomes | 480 PNGs at 20 fps in `captures/tour/` |
 | `--motion-capture` | 15 seconds of scripted input with live physics and combat | 300 PNGs at 20 fps in `captures/motion/` |
 | `--vertical-capture` | A complete fixed-seed Aqueduct route through all elevations | 20 PNGs per simulated second in `captures/vertical/`; about 25 seconds |
@@ -222,7 +229,7 @@ This is a playable prototype, with these limits visible in the current implement
 - Three melee weapons, a small skill set, shared melee artwork, and reused animation poses for some actions.
 - One final boss, one ending, and a limited mutation and upgrade economy. No blueprint unlock tree, extensive affixes/synergies, or traversal-rune progression.
 - A complete atlas without fog of war; no challenge modes or DLC systems.
-- Keyboard/mouse controls without gamepad support or rebinding; no localization or extensive accessibility settings.
+- Keyboard/mouse controls without gamepad support or rebinding; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, and lighting.
 - macOS Apple Silicon and Linux verification only, an experimental browser build tested only in headless Chrome, and local ad-hoc macOS packaging without notarization.
 - Prototype audio, balancing, encounter variety, and animation coverage. Visual captures and automated tests are complementary checks, not a guarantee of zero defects.
 

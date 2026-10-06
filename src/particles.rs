@@ -449,6 +449,7 @@ fn tinted(mut color: Color, alpha: f32) -> Color {
 
 /// All positions land on the half-world-pixel grid used by the native 1280x720 target.
 pub fn draw(game: &Game, camera: f32) {
+    let flash = game.settings.flash_scale();
     // Smoke sits underneath hot fragments, independent of emitter insertion order.
     for soft in [true, false] {
         for p in &game.particles {
@@ -527,7 +528,7 @@ pub fn draw(game: &Game, camera: f32) {
                 }
                 Kind::Ring => {
                     let radius = p.size * (1. - remaining * remaining).max(0.05);
-                    let color = tinted(p.color, remaining * remaining * 0.7);
+                    let color = tinted(p.color, remaining * remaining * 0.7 * flash);
                     let flatten = p.pos.y > p.floor - 8.;
                     for segment in 0..24 {
                         let a = segment as f32 / 24. * std::f32::consts::TAU;
@@ -545,7 +546,7 @@ pub fn draw(game: &Game, camera: f32) {
                 }
                 Kind::Flash => {
                     let radius = p.size * remaining;
-                    let color = tinted(p.color, remaining * 0.9);
+                    let color = tinted(p.color, remaining * 0.9 * flash);
                     draw_triangle(
                         pos + vec2(-radius, 0.),
                         pos + vec2(0., -radius * 0.22),

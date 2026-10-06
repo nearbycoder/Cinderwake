@@ -2,6 +2,7 @@
 use crate::{
     game::*,
     render::{c, INK},
+    settings::{RowValue, Settings},
     ui_skin::Skin,
     world::*,
 };
@@ -128,10 +129,11 @@ impl Ui {
         self.centered_at(
             "A / D  Move   SPACE  Jump   J  Strike",
             354.,
-            624.,
+            618.,
             15.,
             c(MUTED),
         );
+        self.centered_at("O  Options      M  Mute", 354., 644., 14., c(MUTED));
     }
     fn hud(&self, g: &Game) {
         let p = &g.player;
@@ -267,8 +269,13 @@ impl Ui {
         self.heading(heading, 640., y, 37.);
     }
     pub fn draw(&self, g: &Game) {
-        if g.screen == Screen::Title {
+        let over_title = g.screen == Screen::Options && g.options_from == Screen::Title;
+        if g.screen == Screen::Title || over_title {
             self.title_screen(g);
+            if over_title {
+                draw_rectangle(0., 0., 1280., 720., INK.with_alpha(0.73));
+                self.options(g);
+            }
             return;
         }
         self.hud(g);
@@ -361,7 +368,12 @@ impl Ui {
         }
         if matches!(
             g.screen,
-            Screen::Paused | Screen::Scroll | Screen::Camp | Screen::Dead | Screen::Victory
+            Screen::Paused
+                | Screen::Scroll
+                | Screen::Camp
+                | Screen::Dead
+                | Screen::Victory
+                | Screen::Options
         ) {
             draw_rectangle(0., 0., 1280., 720., INK.with_alpha(0.73));
             match g.screen {
@@ -369,6 +381,7 @@ impl Ui {
                 Screen::Scroll => self.disciplines(),
                 Screen::Camp => self.camp(g),
                 Screen::Dead | Screen::Victory => self.result(g),
+                Screen::Options => self.options(g),
                 _ => {}
             }
         }
@@ -404,14 +417,80 @@ impl Ui {
             self.text(b, 751., y + 18., 19., c(PALE));
         }
         self.button("ESC   Resume the descent", Rect::new(423., 493., 434., 57.));
+        if g.abandon_armed {
+            self.center(
+                "Press X again to abandon this run. Carried embers and equipment will be lost.",
+                577.,
+                15.,
+                c(0xef9c81),
+            );
+        } else {
+            self.center(
+                if g.settings.muted {
+                    "O  Options      X  Abandon run      M  Sound is muted"
+                } else {
+                    "O  Options      X  Abandon run      M  Sound is on"
+                },
+                577.,
+                15.,
+                c(MUTED),
+            );
+        }
+    }
+    fn options(&self, g: &Game) {
+        self.modal(Rect::new(255., 114., 770., 493.), "Options", 221.);
+        for row in 0..Settings::ROWS {
+            let y = 246. + row as f32 * 40.;
+            let selected = row == g.options_row;
+            let (label, value, _) = g.settings.row(row);
+            if selected {
+                draw_rectangle(300., y - 3., 680., 34., c(TEAL).with_alpha(0.12));
+                self.text(">", 312., y + 20., 19., c(TEAL));
+            }
+            self.text(
+                label,
+                336.,
+                y + 20.,
+                19.,
+                c(if selected { GOLD } else { PALE }),
+            );
+            match value {
+                RowValue::Level(level) => {
+                    for i in 0..10 {
+                        let rect = Rect::new(640. + i as f32 * 24., y + 9., 19., 12.);
+                        let color = if i < level {
+                            c(TEAL)
+                        } else {
+                            c(MUTED).with_alpha(0.22)
+                        };
+                        draw_rectangle(rect.x, rect.y, rect.w, rect.h, color);
+                    }
+                    self.text(
+                        &format!("{}%", level as u32 * 10),
+                        892.,
+                        y + 20.,
+                        17.,
+                        c(PALE),
+                    );
+                }
+                RowValue::Switch(on) => {
+                    self.text(
+                        if on { "ON" } else { "OFF" },
+                        640.,
+                        y + 20.,
+                        19.,
+                        c(if on { TEAL } else { MUTED }),
+                    );
+                }
+            }
+        }
+        let (_, _, help) = g.settings.row(g.options_row);
+        self.center(help, 494., 15., c(MUTED));
+        self.button("ESC   Back", Rect::new(483., 508., 314., 50.));
         self.center(
-            if g.muted {
-                "M  Sound is muted"
-            } else {
-                "M  Sound is on"
-            },
-            577.,
-            15.,
+            "W / S  choose      A / D  adjust      M  mute all sound",
+            580.,
+            14.,
             c(MUTED),
         );
     }

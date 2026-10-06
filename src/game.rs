@@ -2,6 +2,7 @@ pub use crate::particles::Particle;
 use crate::{
     particles::{self, Effect, VisualRng},
     save::Save,
+    settings::Settings,
     world::*,
 };
 use macroquad::prelude::*;
@@ -27,6 +28,7 @@ pub enum Screen {
     Paused,
     Scroll,
     Camp,
+    Options,
     Dead,
     Victory,
 }
@@ -204,7 +206,12 @@ pub struct Game {
     effect_clock: f32,
     footstep_distance: f32,
     pub map: bool,
-    pub muted: bool,
+    pub settings: Settings,
+    /// Screen to return to when the options page closes.
+    pub options_from: Screen,
+    pub options_row: usize,
+    /// The first abandon request from the pause screen only asks for confirmation.
+    pub abandon_armed: bool,
     pub intro: f32,
     pub route: usize,
     pub save_error: Option<String>,
@@ -310,7 +317,10 @@ impl Game {
             effect_clock: 0.,
             footstep_distance: 0.,
             map: false,
-            muted: false,
+            settings: Settings::default(),
+            options_from: Screen::Title,
+            options_row: 0,
+            abandon_armed: false,
             intro: 4.,
             route: 0,
             save_error: None,
@@ -327,10 +337,10 @@ impl Game {
     }
     pub fn start(&mut self) {
         let save = self.save.clone();
-        let muted = self.muted;
+        let settings = self.settings.clone();
         let practice = self.practice;
         *self = Self::new(self.seed.wrapping_add(173), save);
-        self.muted = muted;
+        self.settings = settings;
         self.practice = practice;
         self.screen = Screen::Playing;
         self.save.runs += 1;
@@ -377,10 +387,48 @@ impl Game {
         self.sounds.push(Sfx::Hurt);
         self.effect(Effect::Hurt, self.player.pos - vec2(0., 14.), dir);
         if self.player.hp <= 0. {
-            self.screen = Screen::Dead;
-            self.save.best_kills = self.save.best_kills.max(self.player.kills);
-            self.player.embers = 0;
-            self.persist();
+            self.die();
+        }
+    }
+    fn die(&mut self) {
+        self.screen = Screen::Dead;
+        self.save.best_kills = self.save.best_kills.max(self.player.kills);
+        self.player.embers = 0;
+        self.persist();
+    }
+    /// Pause-screen abandon: the first request arms, the second ends the run
+    /// with the same losses as a death.
+    pub fn request_abandon(&mut self) {
+        if self.screen != Screen::Paused {
+            return;
+        }
+        if self.abandon_armed {
+            self.abandon_armed = false;
+            self.player.hp = 0.;
+            self.die();
+        } else {
+            self.abandon_armed = true;
+        }
+    }
+    pub fn open_options(&mut self) {
+        if matches!(self.screen, Screen::Title | Screen::Paused) {
+            self.options_from = self.screen;
+            self.options_row = 0;
+            self.abandon_armed = false;
+            self.screen = Screen::Options;
+        }
+    }
+    pub fn close_options(&mut self) {
+        if self.screen == Screen::Options {
+            self.screen = self.options_from;
+            self.persist_settings();
+        }
+    }
+    pub fn persist_settings(&mut self) {
+        if !self.practice {
+            if let Err(e) = self.settings.store() {
+                self.save_error = Some(e.to_string());
+            }
         }
     }
     pub fn hit(&mut self, index: usize, damage: f32, dir: f32, burn: bool) {
@@ -426,7 +474,10 @@ impl Game {
         }
     }
     pub fn tick(&mut self, dt: f32, input: Input) {
-        if matches!(self.screen, Screen::Paused | Screen::Scroll | Screen::Camp) {
+        if matches!(
+            self.screen,
+            Screen::Paused | Screen::Scroll | Screen::Camp | Screen::Options
+        ) {
             return;
         }
         self.time += dt;
@@ -664,7 +715,9 @@ impl Game {
                 .collect();
             for i in indices {
                 self.hit(i, dmg, dir, self.player.tier > 1);
-                self.hitstop = 0.035;
+                if self.settings.hitstop {
+                    self.hitstop = 0.035;
+                }
             }
         }
         if landed_slam {
@@ -1249,7 +1302,12 @@ mod tests {
         let mut g = game();
         g.effect(Effect::Explosion, vec2(100., FLOOR), 0.);
         let first = g.particles[0].clone();
-        for screen in [Screen::Paused, Screen::Scroll, Screen::Camp] {
+        for screen in [
+            Screen::Paused,
+            Screen::Scroll,
+            Screen::Camp,
+            Screen::Options,
+        ] {
             g.screen = screen;
             g.tick(
                 STEP,
@@ -1498,6 +1556,56 @@ mod tests {
         );
         assert!(g.level.enemies[0].hp < 65.);
         assert_eq!(g.level.enemies[1].hp, 65.);
+    }
+    #[test]
+    fn hitstop_setting_controls_the_impact_freeze() {
+        for enabled in [true, false] {
+            let mut g = game();
+            g.settings.hitstop = enabled;
+            g.level.enemies = vec![Enemy::new(140., FLOOR, EnemyKind::Warden, 0)];
+            g.tick(
+                STEP,
+                Input {
+                    attack: true,
+                    ..Default::default()
+                },
+            );
+            assert!(g.level.enemies[0].hp < 65.);
+            assert_eq!(g.hitstop > 0., enabled);
+        }
+    }
+    #[test]
+    fn abandoning_needs_confirmation_and_costs_like_a_death() {
+        let mut g = game();
+        g.save.embers = 30;
+        g.player.embers = 12;
+        g.request_abandon();
+        assert_eq!(g.screen, Screen::Playing, "only the pause screen abandons");
+        g.screen = Screen::Paused;
+        g.request_abandon();
+        assert_eq!(g.screen, Screen::Paused);
+        assert!(g.abandon_armed);
+        g.request_abandon();
+        assert_eq!(g.screen, Screen::Dead);
+        assert_eq!(g.player.embers, 0);
+        assert_eq!(g.save.embers, 30);
+    }
+    #[test]
+    fn options_return_to_their_origin_and_survive_a_new_run() {
+        let mut g = game();
+        g.screen = Screen::Paused;
+        g.abandon_armed = true;
+        g.open_options();
+        assert_eq!(g.screen, Screen::Options);
+        assert!(!g.abandon_armed);
+        g.settings.adjust(2, -1);
+        g.close_options();
+        assert_eq!(g.screen, Screen::Paused);
+        g.start();
+        assert_eq!(g.settings.shake, 9);
+        g.screen = Screen::Playing;
+        g.open_options();
+        assert_eq!(g.screen, Screen::Playing, "options open only from menus");
     }
     #[test]
     fn death_loses_unbanked_embers_only() {
