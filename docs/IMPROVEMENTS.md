@@ -109,3 +109,36 @@ All six scoped items shipped on `improvements`, one commit each. Every commit pa
 | F. Stage difficulty | `47ed498` | Duel-simulation regression test with numbers recorded in [ENGINE.md](ENGINE.md#build-and-verification); a test that stage travel applies the scaling; a temporary fixture capture of the new Crown gallery guards (`f-crown-gallery-guards.jpg`). No human playtest. |
 
 Deferred to a later round: Linux in CI and Linux packaging (item 7), the chest choice (8), rebinding (10), fog of war (12), audio depth (13), content (14), and a smaller web download (15). Gamepad (9) and web hosting are waiting on owner decisions.
+
+## Round 2 scope
+
+Five items, ordered so the riskiest one (rebinding) lands last. Each item gets the round-1 checks: `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, `cargo test --locked`, the capture modes, and screenshots in [`media/improvements/round2/`](media/improvements/round2/).
+
+### A. Telegraphed attacks that commit (round-1 finding)
+
+Round 1's duel simulation showed that holding attack keeps a single warden or brute permanently staggered, so it never completes an attack. Each hit adds 0.22 s of stun, which pauses the windup.
+
+- **Acceptance:** once a guardian has started its windup, ordinary strikes no longer stagger it. Combo finishers, ground slams, fire vessels, arc snares, and parries still do. Brutes stagger only from those heavy sources, even outside a windup. Moths and the Regent keep their current behavior. In the duel simulation, holding attack against a brute costs vitality at every stage, while a build that dodges as the windup starts takes less damage. The round-1 difficulty test still passes, re-tuned if needed.
+- **Verify:** new simulation tests (held attack vs dodge-timed); `--motion-capture` still exercises every action; the motion capture is inspected.
+
+### B. Choose at reliquaries (item 8)
+
+- **Acceptance:** opening a chest with a different weapon on offer pauses on a choice: **1** takes the new weapon, **2** keeps the current one. The tier increase applies either way, and damage, reach, and swing time are shown for both. If the offer is the weapon already held, it upgrades directly, as before. The UI and docs describe this accurately.
+- **Verify:** game tests for both choices and for the same-weapon case; a new `--ui-gallery` fixture; real key input in the browser build.
+
+### C. Atlas fog of war (item 12)
+
+- **Acceptance:** the atlas and HUD minimap show only the parts of the level the camera has seen. The bellgate is always marked, so the destination is never hidden. Exploration resets with each biome. Practice and staged captures keep the full survey so existing captures don't change.
+- **Verify:** unit tests for revealing cells and for what the atlas hides; a `--ui-gallery` fixture with partial exploration; the browser build shows the atlas filling in as the player moves.
+
+### D. Linux in CI, browser build check, Linux package (item 7)
+
+- **Acceptance:** CI runs format, lint, and tests on Ubuntu as well as macOS, and checks that the wasm build compiles. `scripts/package-linux.sh` produces `dist/cinderwake-linux-x86_64.tar.gz` containing the binary, licenses, and a short README.
+- **Verify:** run the package script here, extract the tarball inside `target/`, and run `--ui-gallery` from the extracted binary. The workflow can't run here; its commands are run locally where possible and listed as unverified until CI runs on GitHub.
+
+### E. Key rebinding (item 10)
+
+- **Acceptance:** a Controls page reached from Options lets the player rebind the twelve gameplay actions (move left and right, jump, down, strike, glassbolt, dodge, parry, fire vessel, arc snare, heal, interact) to any supported key. Binding a key that's already in use swaps the two bindings. There's a reset to defaults. Bindings are saved with the settings. The HUD key badges, pause list, title line, and tips show the current keys. Arrow keys and mouse buttons remain fixed alternatives, and menu keys stay fixed.
+- **Verify:** unit tests for binding, swapping, persistence, and labels; `--ui-gallery` fixtures for the Controls page and a HUD with rebound keys; real key input in the browser build rebinds an action and uses it in play.
+
+Owner decisions still open, and not part of this round: gamepad support, web hosting, shrinking the art, and licenses.
