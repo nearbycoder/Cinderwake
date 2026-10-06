@@ -106,11 +106,15 @@ fn menus(g: &mut Game) {
                     g.buy(i);
                 }
             }
+            let route = g.route;
             if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
                 g.route = 0;
             }
             if is_key_pressed(KeyCode::D) || is_key_pressed(KeyCode::Right) {
                 g.route = 1;
+            }
+            if g.route != route {
+                g.sounds.push(Sfx::Select);
             }
             if is_key_pressed(KeyCode::Enter) {
                 g.travel();
@@ -148,6 +152,8 @@ fn options_menu(g: &mut Game) {
     };
     if delta != 0 {
         g.settings.adjust(g.options_row, delta);
+        // Also lets the player hear the effects volume they just chose.
+        g.sounds.push(Sfx::Select);
     }
 }
 

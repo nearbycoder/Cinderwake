@@ -259,7 +259,7 @@ pub struct Trap {
     pub life: f32,
     pub tick: f32,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Sfx {
     Slash,
     Hit,
@@ -270,6 +270,41 @@ pub enum Sfx {
     Hurt,
     Explosion,
     Heal,
+    /// A guardian or the Regent falls.
+    Kill,
+    /// A glassbolt leaves the bow.
+    Bolt,
+    /// A fire vessel or arc snare is thrown.
+    Throw,
+    /// Embers banked at a bellgate, or a Keeper purchase.
+    Bank,
+    /// A menu choice: a memory, a reliquary, a Keeper route, an option.
+    Select,
+    /// Refused: too few embers or copper, or a sealed door.
+    Deny,
+    /// The heavy third strike of a combo.
+    Finisher,
+}
+impl Sfx {
+    /// Every cue, in the order `Audio` loads their files.
+    pub const ALL: [Self; 16] = [
+        Self::Slash,
+        Self::Hit,
+        Self::Jump,
+        Self::Dodge,
+        Self::Parry,
+        Self::Loot,
+        Self::Hurt,
+        Self::Explosion,
+        Self::Heal,
+        Self::Kill,
+        Self::Bolt,
+        Self::Throw,
+        Self::Bank,
+        Self::Select,
+        Self::Deny,
+        Self::Finisher,
+    ];
 }
 pub struct Game {
     pub player: Player,
@@ -634,9 +669,13 @@ impl Game {
             return;
         };
         self.controls_note = Some(match self.settings.keys.bind(action, key) {
-            Err(()) => "That key is reserved for menus. Try another.".into(),
+            Err(()) => {
+                self.sounds.push(Sfx::Deny);
+                "That key is reserved for menus. Try another.".into()
+            }
             Ok(moved) => {
                 self.rebinding = false;
+                self.sounds.push(Sfx::Select);
                 match moved {
                     Some(other) => format!(
                         "{} is now {}; {} moved to {}.",
@@ -706,7 +745,7 @@ impl Game {
             Color::from_hex(if committed { 0xa9c1d6 } else { 0xffdb9b }),
         );
         self.effect(if dead { Effect::Death } else { Effect::Hit }, pos, dir);
-        self.sounds.push(Sfx::Hit);
+        self.sounds.push(if dead { Sfx::Kill } else { Sfx::Hit });
         self.shake = 3.;
         if dead {
             self.queue_hint(Hint::Tools);
@@ -910,7 +949,11 @@ impl Game {
                 p.damage() * if p.combo == 2 { 1.4 } else { 1. },
                 p.combo == 2,
             ));
-            self.sounds.push(Sfx::Slash);
+            self.sounds.push(if p.combo == 2 {
+                Sfx::Finisher
+            } else {
+                Sfx::Slash
+            });
         }
         if input.bow && p.bow_cd <= 0. && p.heal_time <= 0. {
             p.bow_cd = 0.32;
@@ -923,10 +966,11 @@ impl Game {
                 hostile: false,
                 kind: 0,
             });
-            self.sounds.push(Sfx::Slash);
+            self.sounds.push(Sfx::Bolt);
         }
         if input.grenade && p.grenade_cd <= 0. {
             p.grenade_cd = 5.;
+            self.sounds.push(Sfx::Throw);
             self.shots.push(Shot {
                 pos: p.pos - vec2(0., 22.),
                 vel: vec2(p.face * 180., -210.),
@@ -939,6 +983,7 @@ impl Game {
         if input.trap && p.trap_cd <= 0. {
             if let Some(y) = surface_below(&self.level.platforms, p.pos.x, p.pos.y) {
                 p.trap_cd = 8.;
+                self.sounds.push(Sfx::Throw);
                 let pos = vec2(p.pos.x, y);
                 effects.push((Effect::Trap, pos, 0.));
                 self.traps.push(Trap {
@@ -1384,6 +1429,7 @@ impl Game {
             ObjectKind::Forge => {
                 if self.player.gold < 60 {
                     self.notify("The smith asks for 60 copper to temper your weapon.");
+                    self.sounds.push(Sfx::Deny);
                     return;
                 }
                 self.player.gold -= 60;
@@ -1400,6 +1446,7 @@ impl Game {
                     self.notify(
                         "A sealed cache. Defeat 8 guardians, or return with the Crown Rune.",
                     );
+                    self.sounds.push(Sfx::Deny);
                     return;
                 }
                 self.player.embers += 15;
@@ -1415,6 +1462,7 @@ impl Game {
                         .any(|e| e.kind == EnemyKind::Regent && e.hp > 0.)
                     {
                         self.notify("The Brass Regent holds the gate shut.");
+                        self.sounds.push(Sfx::Deny);
                         return;
                     }
                     self.save.wins += 1;
@@ -1432,7 +1480,11 @@ impl Game {
             }
         }
         self.level.objects[i].used = true;
-        self.sounds.push(Sfx::Loot);
+        self.sounds.push(if kind == ObjectKind::Exit {
+            Sfx::Bank
+        } else {
+            Sfx::Loot
+        });
         self.effect(Effect::Loot, pos - vec2(0., 15.), 0.);
     }
     fn notify_weapon(&mut self) {
@@ -1451,6 +1503,7 @@ impl Game {
         if take {
             self.player.weapon = found;
         }
+        self.sounds.push(Sfx::Select);
         self.screen = Screen::Playing;
         self.notify_weapon();
     }
@@ -1459,6 +1512,7 @@ impl Game {
         let hp = if choice == 2 { 24. } else { 10. };
         self.player.max_hp += hp;
         self.player.hp += hp;
+        self.sounds.push(Sfx::Select);
         self.screen = Screen::Playing;
         self.notify(
             [
@@ -1476,10 +1530,12 @@ impl Game {
         };
         if self.save.embers < cost {
             self.notify("Not enough banked embers.");
+            self.sounds.push(Sfx::Deny);
             return;
         }
         if choice == 1 && self.save.flask >= 3 {
             self.notify("The flask is fully reinforced.");
+            self.sounds.push(Sfx::Deny);
             return;
         }
         self.save.embers -= cost;
@@ -1498,6 +1554,7 @@ impl Game {
             }
         }
         self.persist();
+        self.sounds.push(Sfx::Bank);
         self.notify("The Keeper binds your choice.");
     }
     pub fn travel(&mut self) {
@@ -2305,6 +2362,109 @@ mod tests {
         g.open_controls();
         g.reset_controls();
         assert_eq!(g.settings.keys, Bindings::default());
+    }
+    #[test]
+    fn actions_menus_and_refusals_queue_their_own_cues() {
+        let heard = |g: &mut Game| std::mem::take(&mut g.sounds);
+        let press = |g: &mut Game, input: Input| {
+            g.tick(STEP, input);
+        };
+        let mut g = game();
+        g.place_player(g.level.spawn);
+        g.sounds.clear();
+        press(
+            &mut g,
+            Input {
+                bow: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(heard(&mut g), vec![Sfx::Bolt]);
+        press(
+            &mut g,
+            Input {
+                grenade: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(heard(&mut g), vec![Sfx::Throw]);
+        press(
+            &mut g,
+            Input {
+                trap: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(heard(&mut g), vec![Sfx::Throw]);
+
+        // Held attack: the third swing of each combo is the heavy finisher.
+        let mut swings = vec![];
+        for _ in 0..240 {
+            press(
+                &mut g,
+                Input {
+                    attack: true,
+                    ..Default::default()
+                },
+            );
+            swings.extend(
+                heard(&mut g)
+                    .into_iter()
+                    .filter(|s| matches!(s, Sfx::Slash | Sfx::Finisher)),
+            );
+        }
+        assert_eq!(swings[..3], [Sfx::Slash, Sfx::Finisher, Sfx::Slash]);
+
+        // A wound sounds a hit; a killing blow sounds a kill instead.
+        let pos = g.player.pos;
+        g.level.enemies = vec![Enemy::new(
+            pos.x + 20.,
+            pos.y,
+            EnemyKind::Warden,
+            Threat::BASE,
+        )];
+        g.hit(0, 5., 1., false, false);
+        assert_eq!(heard(&mut g), vec![Sfx::Hit]);
+        g.hit(0, 500., 1., false, false);
+        assert_eq!(heard(&mut g), vec![Sfx::Kill]);
+
+        // Refusals and banking.
+        let at = |g: &mut Game, kind: ObjectKind| {
+            let pos = g.level.objects.iter().find(|o| o.kind == kind).unwrap().pos;
+            g.place_player(pos - vec2(20., 0.));
+            g.sounds.clear();
+            g.tick(
+                STEP,
+                Input {
+                    interact: true,
+                    ..Default::default()
+                },
+            );
+        };
+        g.player.gold = 0;
+        at(&mut g, ObjectKind::Forge);
+        assert_eq!(heard(&mut g), vec![Sfx::Deny]);
+        g.player.kills = 0;
+        at(&mut g, ObjectKind::Secret);
+        assert_eq!(heard(&mut g), vec![Sfx::Deny]);
+        at(&mut g, ObjectKind::Exit);
+        assert_eq!(heard(&mut g), vec![Sfx::Bank]);
+        assert_eq!(g.screen, Screen::Camp);
+        g.save.embers = 0;
+        g.buy(0);
+        assert_eq!(heard(&mut g), vec![Sfx::Deny]);
+        g.save.embers = 100;
+        g.buy(0);
+        assert_eq!(heard(&mut g), vec![Sfx::Bank]);
+
+        // Menu choices.
+        g.screen = Screen::Scroll;
+        g.upgrade(0);
+        assert_eq!(heard(&mut g), vec![Sfx::Select]);
+        g.offer = Some(Weapon::Hammer);
+        g.screen = Screen::Reliquary;
+        g.choose_weapon(false);
+        assert_eq!(heard(&mut g), vec![Sfx::Select]);
     }
     #[test]
     fn death_loses_unbanked_embers_only() {

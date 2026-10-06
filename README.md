@@ -204,7 +204,7 @@ Tests cover physics, combat, progression, animation timing, effects, and multi-b
 The setting, characters, encounters, generated artwork, and synthesized audio are original. No Dead Cells assets or source code are used. [Dead Cells](https://en.wikipedia.org/wiki/Dead_Cells) was the initial genre and feel reference.
 
 - **Artwork:** created with the built-in ImageGen tool. Original PNG outputs and prompts are retained for [characters](assets/sprites/PROMPTS.md), [environments](assets/environment/PROMPTS.md), [panoramas and animated scenery](assets/environment/MOTION-PROMPTS.md), [vertical backdrops](assets/environment/DEPTH-PROMPTS.md), and [interface elements](assets/ui/PROMPTS.md).
-- **Audio:** an original synthesized score with a seamless loop for each biome plus the title and Keeper, and nine effects; regenerate and check with `python3 scripts/synthesize.py`.
+- **Audio:** an original synthesized score with a seamless loop for each biome plus the title and Keeper, and sixteen effects; regenerate and check with `python3 scripts/synthesize.py`.
 - **Font:** Cormorant Garamond, under the [SIL Open Font License](assets/FONT-LICENSE.txt).
 - **Code and generated artwork/audio:** [MIT](LICENSE). Macroquad and other dependencies retain their respective licenses.
 

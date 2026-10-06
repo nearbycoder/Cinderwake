@@ -114,7 +114,7 @@ impl Settings {
             1 => (
                 "Effects volume",
                 RowValue::Level(self.effects),
-                "Strikes, footfalls, and explosions.",
+                "Strikes, tools, kills, menus, and explosions.",
             ),
             2 => (
                 "Screen shake",

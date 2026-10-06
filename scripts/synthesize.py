@@ -8,6 +8,7 @@ from pathlib import Path
 out=Path(__file__).resolve().parent.parent/'assets'
 rate=22050
 random.seed(19)
+TAU=2*math.pi
 def write(name, samples, scale=27000):
     path=out/(name+'.wav')
     path.parent.mkdir(exist_ok=True)
@@ -25,13 +26,82 @@ def effects():
             samples.append(value)
         write(name,samples)
 
+# Effects added in round 3 use their own random stream, so the files above
+# regenerate byte for byte.
+def more_effects():
+    rng=random.Random(23)
+    def render(name, duration, fn, peak=.42):
+        samples=[fn(i/rate, i/rate/duration) for i in range(int(rate*duration))]
+        top=max(abs(v) for v in samples)
+        write(name,[v*peak/top for v in samples])
+    def lowpass(values, smooth):
+        y=0.; out=[]
+        for v in values:
+            y+=smooth*(v-y); out.append(y)
+        return out
+    # A guardian breaks apart: a clank, a falling groan, and rising sparks.
+    noise=lowpass([rng.uniform(-1,1) for _ in range(int(rate*.7))],.25)
+    def kill(t,u):
+        clank=sum(a*math.sin(TAU*f*t) for f,a in [(520,1),(1260,.6),(2110,.35)])*math.exp(-t*22)
+        groan=math.sin(TAU*(220*(1-u*.7))*t)*(1-u)**2*.8
+        spark=math.sin(TAU*(1800+2400*u)*t)*math.exp(-((t-.25)/.08)**2)*.25
+        return clank*.7+groan+noise[int(t*rate)]*math.exp(-t*9)*1.1+spark
+    render('kill',.7,kill)
+    # A glassbolt: a bright falling zip.
+    ph=[0.]
+    def bolt(t,u):
+        ph[0]+=TAU*(2600-1700*u)/rate
+        return (math.sin(ph[0])+.3*math.sin(2*ph[0]))*(1-u)**1.5*min(1,t*900)+rng.uniform(-1,1)*math.exp(-t*60)*.4
+    render('bolt',.22,bolt,.36)
+    # A thrown vessel or snare: a short airy whoosh.
+    air=[rng.uniform(-1,1) for _ in range(int(rate*.32))]
+    air=[a-b for a,b in zip(lowpass(air,.35),lowpass(air,.04))]
+    render('throw',.32,lambda t,u: air[int(t*rate)]*math.sin(math.pi*u)**2,.34)
+    # Banking embers or a Keeper purchase: three rising bells.
+    def bank(t,u):
+        v=0.
+        for k,f in enumerate((587.33,698.46,880.)):
+            s=t-k*.09
+            if s>0:
+                v+=(math.sin(TAU*f*s)+.4*math.sin(TAU*f*2.01*s)+.2*math.sin(TAU*f*3.02*s))*math.exp(-s*3.2)*min(1,s*600)
+        return v
+    render('bank',1.3,bank,.4)
+    # A menu choice: a soft two-step blip.
+    def select(t,u):
+        first=t<.05
+        s=t if first else t-.05
+        span=.05 if first else .08
+        return math.sin(TAU*(880 if first else 1320)*t)*math.sin(math.pi*min(1,s/span))**2
+    render('select',.13,select,.3)
+    # Not enough embers, or a sealed door: two dull low buzzes.
+    def deny(t,u):
+        s=t%.12
+        gate=math.sin(math.pi*s/.08)**2 if s<.08 else 0.
+        p=TAU*140*t
+        return (math.sin(p)+.5*math.sin(3*p)+.25*math.sin(5*p))*gate
+    render('deny',.2,deny,.3)
+    # A combo finisher: a lower, heavier sweep with a thump under it.
+    def finisher(t,u):
+        sweep=math.sin(TAU*(420*(1-u*.7))*t)*.5+rng.uniform(-1,1)*.65
+        thump=math.sin(TAU*(90*(1-u*.5))*t)*math.exp(-t*14)*1.2
+        return sweep*(1-u)**2+thump
+    render('finisher',.28,finisher,.45)
+
+EFFECTS=['slash','hit','jump','dodge','parry','loot','hurt','explosion','heal','kill','bolt','throw','bank','select','deny','finisher']
+
+def effect_report(name):
+    x,r=read(out/(name+'.wav'))
+    rms=math.sqrt(sum(v*v for v in x)/len(x))
+    peak=max(abs(v) for v in x)
+    print(f'{name}.wav: {len(x)/r:.2f} s, peak {peak:.2f}, RMS {20*math.log10(rms):.1f} dBFS'+('  FAIL: clips' if peak>=.99 else ''))
+    return peak>=.99
+
 # ---------------------------------------------------------------------------
 # Music. Each track is a whole number of bars. Notes are rendered into a ring
 # buffer, so any tail that runs past the end rings into the start, and the
 # loop wraps with no fade or gap. Sustained drones use frequencies with a whole
 # number of cycles per loop, and filtered noise runs twice around the ring so
 # its filter state matches at the seam.
-TAU=2*math.pi
 NOTE={'C':-9,'C#':-8,'Db':-8,'D':-7,'D#':-6,'Eb':-6,'E':-5,'F':-4,'F#':-3,'Gb':-3,'G':-2,'G#':-1,'Ab':-1,'A':0,'A#':1,'Bb':1,'B':2}
 def hz(name):
     """'A4' -> 440 Hz."""
@@ -278,6 +348,9 @@ if __name__=='__main__':
     if sys.argv[1:2]==['--check']:
         sys.exit(1 if any([check(Path(p)) for p in sys.argv[2:]]) else 0)
     effects()
+    more_effects()
+    if any([effect_report(name) for name in EFFECTS]):
+        sys.exit(1)
     for make in (hearth,aqueduct,conservatory,foundry,crown):
         make()
     if any([check(out/'music'/(name+'.wav')) for name in MUSIC]):

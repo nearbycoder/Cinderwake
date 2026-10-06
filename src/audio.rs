@@ -68,6 +68,29 @@ impl Crossfade {
     }
 }
 
+/// The embedded file for each cue. The match is exhaustive, so a new cue
+/// can't compile without a file.
+fn effect_file(cue: Sfx) -> &'static [u8] {
+    match cue {
+        Sfx::Slash => include_bytes!("../assets/slash.wav"),
+        Sfx::Hit => include_bytes!("../assets/hit.wav"),
+        Sfx::Jump => include_bytes!("../assets/jump.wav"),
+        Sfx::Dodge => include_bytes!("../assets/dodge.wav"),
+        Sfx::Parry => include_bytes!("../assets/parry.wav"),
+        Sfx::Loot => include_bytes!("../assets/loot.wav"),
+        Sfx::Hurt => include_bytes!("../assets/hurt.wav"),
+        Sfx::Explosion => include_bytes!("../assets/explosion.wav"),
+        Sfx::Heal => include_bytes!("../assets/heal.wav"),
+        Sfx::Kill => include_bytes!("../assets/kill.wav"),
+        Sfx::Bolt => include_bytes!("../assets/bolt.wav"),
+        Sfx::Throw => include_bytes!("../assets/throw.wav"),
+        Sfx::Bank => include_bytes!("../assets/bank.wav"),
+        Sfx::Select => include_bytes!("../assets/select.wav"),
+        Sfx::Deny => include_bytes!("../assets/deny.wav"),
+        Sfx::Finisher => include_bytes!("../assets/finisher.wav"),
+    }
+}
+
 pub struct Audio {
     sounds: Vec<Option<Sound>>,
     music: Vec<Option<Sound>>,
@@ -77,20 +100,9 @@ pub struct Audio {
 }
 impl Audio {
     pub async fn new() -> Self {
-        let files: [&[u8]; 9] = [
-            include_bytes!("../assets/slash.wav"),
-            include_bytes!("../assets/hit.wav"),
-            include_bytes!("../assets/jump.wav"),
-            include_bytes!("../assets/dodge.wav"),
-            include_bytes!("../assets/parry.wav"),
-            include_bytes!("../assets/loot.wav"),
-            include_bytes!("../assets/hurt.wav"),
-            include_bytes!("../assets/explosion.wav"),
-            include_bytes!("../assets/heal.wav"),
-        ];
         let mut sounds = vec![];
-        for b in files {
-            sounds.push(load_sound_from_bytes(b).await.ok());
+        for cue in Sfx::ALL {
+            sounds.push(load_sound_from_bytes(effect_file(cue)).await.ok());
         }
         let scores: [&[u8]; Track::ALL.len()] = [
             include_bytes!("../assets/music/hearth.wav"),
@@ -212,6 +224,21 @@ mod tests {
         let mut g = practice();
         g.open_options();
         assert_eq!(Track::for_game(&g), Track::Hearth, "options over the title");
+    }
+
+    #[test]
+    fn every_cue_loads_its_own_valid_file_in_order() {
+        // `Audio` indexes its sounds by `cue as usize`.
+        for (i, cue) in Sfx::ALL.into_iter().enumerate() {
+            assert_eq!(cue as usize, i, "{cue:?} is out of order");
+            let file = effect_file(cue);
+            assert_eq!(&file[..4], b"RIFF", "{cue:?} is a WAV file");
+            assert!(file.len() > 1000, "{cue:?} has audio");
+        }
+        let mut files: Vec<_> = Sfx::ALL.map(effect_file).to_vec();
+        files.sort();
+        files.dedup();
+        assert_eq!(files.len(), Sfx::ALL.len(), "each cue has a distinct file");
     }
 
     #[test]
