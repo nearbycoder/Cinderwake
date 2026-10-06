@@ -142,3 +142,22 @@ Round 1's duel simulation showed that holding attack keeps a single warden or br
 - **Verify:** unit tests for binding, swapping, persistence, and labels; `--ui-gallery` fixtures for the Controls page and a HUD with rebound keys; real key input in the browser build rebinds an action and uses it in play.
 
 Owner decisions still open, and not part of this round: gamepad support, web hosting, shrinking the art, and licenses.
+
+## Round 2 results (October 6, 2026)
+
+All five scoped items shipped on `improvements-2`, one commit each. Every commit passed `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, and `cargo test --locked` (77 tests became 86). `--vertical-capture` still reaches 37 of 37 waypoints, and `--motion-capture` still produces all 300 frames. Screenshots are in [`media/improvements/round2/`](media/improvements/round2/).
+
+| Item | Commit | How it was verified |
+| --- | --- | --- |
+| A. Guardian poise | `c11adbc` | The planned rule (armor only during windups) wasn't enough. Tracing a duel showed that every light hit's 0.22 s stun and 8-unit shove kept wardens outside their 36-unit attack range. The shipped rule: light hits don't stagger or shove guardians; heavy hits do. `held_attack_no_longer_stun_locks_guardians` makes a guardian unkillable for 5 s: held attack now takes 2–3 strikes from each warden, brute, and archer, where wardens and brutes landed 0 before (1 against the hammer); dodging each telegraph takes 0 warden or brute strikes. The duel test now starts enemies ready to attack, which made the Regent harsher, so its damage scaling dropped from 10% to 5% per stage (stand-still Crown duel: 7–9 s, 62–78% vitality lost). No screenshot: the steel damage number is too small to show clearly in a capture. |
+| B. Reliquary choice | `e98e1e0` | A test opens the same seeded chest with each weapon and checks the direct upgrade, both choices, the tier, and that the world stays frozen. Also the `ui-14-reliquary` fixture (`b-reliquary-choice.jpg`). **Not verified with real key input:** three attempts to pilot the browser build to a chest ended in the undercroft, so the **1**/**2** keys are covered only by the shared menu code and unit tests. |
+| C. Atlas fog of war | `9c9c5df` | `Survey` unit tests; a game test that exploring reveals the map and travel resets it; the `ui-15-atlas-fog` fixture; in the browser build, the atlas started with only the spawn view and grew as the hero moved (`c-*.jpg`). |
+| D. Linux CI and package | `e59b42b` | `scripts/package-linux.sh` built the tarball; the extracted binary ran `--ui-gallery` (16 captures at the time); the CI web job's clippy and debug build commands passed locally. **The new GitHub jobs themselves have not run yet.** |
+| E. Key rebinding | `640b0ab` | Unit tests for defaults, swaps, reserved keys, saved-file repair, and the controls-page flow; `ui-16-controls` and `ui-17-rebound-hud` fixtures; in the browser build with real key events, rebinding Jump to K through the menus made K jump and W stop jumping, Space moved to the glassbolt and fired it, and the binding persisted into a new session (`e-*.jpg`). |
+
+Findings for a later round:
+
+- Guardians usually die in under a second against the expected build at every stage (the opening sabre kills a warden in two hits), so single guardians are rarely threatening. Raising guardian health is a balance decision worth a human playtest.
+- Scripting a route through a level from outside the game is unreliable. A debug flag that starts at a chosen object would make end-to-end checks of chests and other interactions practical.
+
+Still deferred: audio depth (13), new content (14), and a smaller web download (15). Gamepad support, web hosting, shrinking the art, and licenses remain owner decisions.
