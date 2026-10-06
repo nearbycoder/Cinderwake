@@ -1,0 +1,4 @@
+# Macroquad's browser bindings are supplied at load time by mq_js_bundle.js and
+# web/cinderwake-storage.js; newer rust-lld rejects such imports by default.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined"]

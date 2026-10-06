@@ -1,50 +1,120 @@
 //! Small named-file persistence for progress and settings. Desktop builds use
-//! the platform's per-user data directory and replace files atomically.
-use std::{ffi::OsString, io, path::PathBuf};
+//! the platform's per-user data directory and replace files atomically; the
+//! browser build stores the same bytes in `localStorage` (see `web/`).
+#[cfg(target_arch = "wasm32")]
+pub use web::{read, write};
 
-/// Per-user data directory for an operating system, given an environment lookup.
-fn data_dir_for(os: &str, var: impl Fn(&str) -> Option<OsString>) -> PathBuf {
-    let home = || var("HOME").map(PathBuf::from).unwrap_or_else(|| ".".into());
-    let nonempty = |name| var(name).filter(|v| !v.is_empty()).map(PathBuf::from);
-    match os {
-        "macos" => home().join("Library/Application Support/Cinderwake"),
-        "windows" => nonempty("APPDATA")
-            .unwrap_or_else(|| home().join("AppData/Roaming"))
-            .join("Cinderwake"),
-        _ => nonempty("XDG_DATA_HOME")
-            .unwrap_or_else(|| home().join(".local/share"))
-            .join("cinderwake"),
+#[cfg(not(target_arch = "wasm32"))]
+pub use desktop::{read, write};
+
+#[cfg(target_arch = "wasm32")]
+mod web {
+    use std::io;
+
+    // Implemented by web/cinderwake-storage.js.
+    extern "C" {
+        fn cinderwake_storage_len(key: *const u8, key_len: u32) -> i32;
+        fn cinderwake_storage_read(key: *const u8, key_len: u32, out: *mut u8, out_len: u32);
+        fn cinderwake_storage_write(
+            key: *const u8,
+            key_len: u32,
+            value: *const u8,
+            value_len: u32,
+        ) -> i32;
+    }
+
+    /// Lets the JS plugin confirm that it matches this build.
+    #[no_mangle]
+    pub extern "C" fn cinderwake_storage_crate_version() -> u32 {
+        1
+    }
+
+    fn key(name: &str) -> String {
+        format!("cinderwake/{name}")
+    }
+
+    pub fn read(name: &str) -> Option<Vec<u8>> {
+        let key = key(name);
+        // SAFETY: the plugin only reads `key` and writes at most `len` bytes to `out`.
+        unsafe {
+            let len = cinderwake_storage_len(key.as_ptr(), key.len() as u32);
+            if len < 0 {
+                return None;
+            }
+            let mut out = vec![0; len as usize];
+            cinderwake_storage_read(key.as_ptr(), key.len() as u32, out.as_mut_ptr(), len as u32);
+            Some(out)
+        }
+    }
+
+    pub fn write(name: &str, bytes: &[u8]) -> io::Result<()> {
+        let key = key(name);
+        // SAFETY: the plugin only reads the two borrowed byte ranges.
+        let stored = unsafe {
+            cinderwake_storage_write(
+                key.as_ptr(),
+                key.len() as u32,
+                bytes.as_ptr(),
+                bytes.len() as u32,
+            )
+        };
+        if stored == 1 {
+            Ok(())
+        } else {
+            Err(io::Error::other("browser storage is unavailable"))
+        }
     }
 }
 
-pub fn data_dir() -> PathBuf {
-    data_dir_for(std::env::consts::OS, |name| std::env::var_os(name))
-}
+#[cfg(not(target_arch = "wasm32"))]
+mod desktop {
+    use std::{ffi::OsString, io, path::PathBuf};
 
-/// Before per-platform directories, every build saved beneath the macOS path.
-fn legacy_path(name: &str) -> Option<PathBuf> {
-    let legacy = data_dir_for("macos", |name| std::env::var_os(name)).join(name);
-    (legacy != data_dir().join(name)).then_some(legacy)
-}
+    /// Per-user data directory for an operating system, given an environment lookup.
+    pub(super) fn data_dir_for(os: &str, var: impl Fn(&str) -> Option<OsString>) -> PathBuf {
+        let home = || var("HOME").map(PathBuf::from).unwrap_or_else(|| ".".into());
+        let nonempty = |name| var(name).filter(|v| !v.is_empty()).map(PathBuf::from);
+        match os {
+            "macos" => home().join("Library/Application Support/Cinderwake"),
+            "windows" => nonempty("APPDATA")
+                .unwrap_or_else(|| home().join("AppData/Roaming"))
+                .join("Cinderwake"),
+            _ => nonempty("XDG_DATA_HOME")
+                .unwrap_or_else(|| home().join(".local/share"))
+                .join("cinderwake"),
+        }
+    }
 
-pub fn read(name: &str) -> Option<Vec<u8>> {
-    std::fs::read(data_dir().join(name))
-        .ok()
-        .or_else(|| std::fs::read(legacy_path(name)?).ok())
-}
+    pub fn data_dir() -> PathBuf {
+        data_dir_for(std::env::consts::OS, |name| std::env::var_os(name))
+    }
 
-pub fn write(name: &str, bytes: &[u8]) -> io::Result<()> {
-    let dir = data_dir();
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join(name);
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(tmp, path)
+    /// Before per-platform directories, every build saved beneath the macOS path.
+    fn legacy_path(name: &str) -> Option<PathBuf> {
+        let legacy = data_dir_for("macos", |name| std::env::var_os(name)).join(name);
+        (legacy != data_dir().join(name)).then_some(legacy)
+    }
+
+    pub fn read(name: &str) -> Option<Vec<u8>> {
+        std::fs::read(data_dir().join(name))
+            .ok()
+            .or_else(|| std::fs::read(legacy_path(name)?).ok())
+    }
+
+    pub fn write(name: &str, bytes: &[u8]) -> io::Result<()> {
+        let dir = data_dir();
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(name);
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, bytes)?;
+        std::fs::rename(tmp, path)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::desktop::*;
+    use std::{ffi::OsString, path::PathBuf};
 
     fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
         move |name| {

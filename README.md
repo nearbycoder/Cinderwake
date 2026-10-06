@@ -76,14 +76,27 @@ cargo run --release --locked
 
 Press **Enter** to begin. All runtime art, fonts, shaders, and audio are embedded in the executable; no asset download or external game service is required.
 
-**Verified platform: macOS on Apple Silicon.** Other platforms have not been validated. To build a local macOS app:
+**Verified platforms:** macOS on Apple Silicon, and Linux (CachyOS on Wayland through XWayland, AMD Radeon graphics, with 1.25× display scaling). Windows has not been tested. On other Linux distributions you may need the X11, OpenGL, and ALSA development packages that Macroquad depends on.
+
+To build a local macOS app:
 
 ```sh
 ./scripts/package-macos.sh
 open dist/Cinderwake.app
 ```
 
-The script produces an ad-hoc signed app for local use, not a notarized public release. See [build and verification notes](docs/ENGINE.md#build-and-verification) for more detail.
+The script produces an ad-hoc signed app for local use, not a notarized public release.
+
+### In a browser (experimental)
+
+```sh
+./scripts/build-web.sh
+python3 -m http.server -d dist/web 8080   # then open http://localhost:8080
+```
+
+The browser build is a single WebAssembly file of about 49 MB, because all the art is embedded. Progress is kept in the browser's `localStorage`. It has been tested only in headless Chrome on Linux, at 1× and 1.25× pixel ratios: the title screen, starting a run, movement, the atlas, pausing, and keeping progress across a reload. Frame rate, sound, Firefox, Safari, and mobile browsers have not been checked. No hosted version is published.
+
+See [build and verification notes](docs/ENGINE.md#build-and-verification) for more detail.
 
 ## A run, from first spark to final bell
 

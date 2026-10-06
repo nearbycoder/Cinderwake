@@ -299,10 +299,8 @@ async fn main() {
     let seed = if practice {
         4017
     } else {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
+        // `std::time` is unavailable in the browser; miniquad's clock is portable.
+        miniquad::date::now() as u64
     };
     let mut g = Game::new(
         seed,
@@ -345,7 +343,7 @@ async fn main() {
     let mut arrival = 0.0_f32;
     let mut render_times = Vec::new();
     loop {
-        let frame_started = std::time::Instant::now();
+        let frame_started = miniquad::date::now();
         if ui_gallery {
             g = ui_fixture(frame as usize);
         } else if environment_tour {
@@ -557,10 +555,11 @@ async fn main() {
         if profile_render && frame >= 60 {
             // CPU simulation + draw submission only; capture readback and vsync
             // are excluded, so this is not presented as GPU frame rate.
-            render_times.push(frame_started.elapsed().as_secs_f64() * 1000.);
+            render_times.push((miniquad::date::now() - frame_started) * 1000.);
         }
+        // Browsers have no writable `captures/` directory.
         if !staged
-            && (is_key_pressed(KeyCode::F12)
+            && (is_key_pressed(KeyCode::F12) && cfg!(not(target_arch = "wasm32"))
                 || (capture && frame.is_multiple_of(6))
                 || (sprite_preview && frame == 120))
         {

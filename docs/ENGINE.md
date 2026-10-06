@@ -47,7 +47,8 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/ui_skin.rs`](../src/ui_skin.rs) | Generated UI atlas, nine-slice frames, gauges, icons, and crest |
 | [`src/audio.rs`](../src/audio.rs) | Embedded audio, effect dispatch, and music controls |
 | [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress |
-| [`src/storage.rs`](../src/storage.rs) | Per-platform data directory and atomic file replacement |
+| [`src/storage.rs`](../src/storage.rs) | Per-platform data directory, atomic file replacement, and browser `localStorage` |
+| [`web/`](../web/) | Browser page and storage plugin used by `scripts/build-web.sh` |
 
 Macroquad provides windowing, graphics, input, and audio. Cinderwake does not implement its own low-level graphics backend.
 
@@ -144,7 +145,13 @@ For a macOS app bundle:
 open dist/Cinderwake.app
 ```
 
-The script builds the release executable, creates `dist/Cinderwake.app`, includes the MIT and font license notices, and ad-hoc signs it. It does not notarize, publish, or distribute the app. Only macOS Apple Silicon has been built and visually checked for this project; other platforms require their own build and runtime validation.
+The script builds the release executable, creates `dist/Cinderwake.app`, includes the MIT and font license notices, and ad-hoc signs it. It does not notarize, publish, or distribute the app. macOS Apple Silicon and Linux (CachyOS, Wayland/XWayland, AMD graphics, 1.25× scaling) have been built and visually checked; Windows has not.
+
+### Browser build
+
+`./scripts/build-web.sh` compiles for `wasm32-unknown-unknown` (adding the target with rustup if needed) and assembles `dist/web/`. That folder holds [`web/index.html`](../web/index.html), the [`localStorage` plugin](../web/cinderwake-storage.js), the `mq_js_bundle.js` loader copied from the exact Macroquad version in `Cargo.lock` along with its license, and `cinderwake.wasm`. [`.cargo/config.toml`](../.cargo/config.toml) passes `--allow-undefined` to the linker because the JavaScript loader supplies Macroquad's browser functions at runtime. Serve the folder over HTTP; opening it as a file URL won't work.
+
+Browser-specific behavior: the run seed and profiling use `miniquad::date::now()`, because `std::time` panics in the browser; progress is stored under the `cinderwake/` keys in `localStorage`; **F12** screenshots are disabled; and audio starts after the first key press, as browsers require. The build was verified in headless Chrome 154 on Linux at device pixel ratios of 1 and 1.25: it loaded with no console errors, reached the title screen, started a run, moved, jumped, opened the atlas and pause screen, and kept progress across a reload. Frame rate, audio, and other browsers have not been measured.
 
 The [Rust checks workflow](../.github/workflows/ci.yml) runs formatting, strict Clippy, and tests on GitHub's macOS runner. It does not launch the graphical game or replace visual runtime checks.
 
@@ -216,7 +223,7 @@ This is a playable prototype, with these limits visible in the current implement
 - One final boss, one ending, and a limited mutation and upgrade economy. No blueprint unlock tree, extensive affixes/synergies, or traversal-rune progression.
 - A complete atlas without fog of war; no challenge modes or DLC systems.
 - Keyboard/mouse controls without gamepad support or rebinding; no localization or extensive accessibility settings.
-- macOS Apple Silicon and Linux verification only, and local ad-hoc macOS packaging without notarization.
+- macOS Apple Silicon and Linux verification only, an experimental browser build tested only in headless Chrome, and local ad-hoc macOS packaging without notarization.
 - Prototype audio, balancing, encounter variety, and animation coverage. Visual captures and automated tests are complementary checks, not a guarantee of zero defects.
 
 See the [README](../README.md) for the playable features, controls, screenshots, and demo.
