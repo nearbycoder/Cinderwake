@@ -196,3 +196,23 @@ At the moment, closing the game or browser tab partway through a run loses the w
 - **Verify:** settings tests and the options gallery fixture; a native launch with fullscreen saved. This item ships only if A–D are done.
 
 Owner decisions still open, and not part of this round: gamepad support, web hosting, shrinking the art, licenses, and guardian health.
+
+## Round 3 results (October 6, 2026)
+
+All four scoped items and the stretch item shipped on `improvements-3`, one commit each. Every commit passed `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, and `cargo test --locked` (86 tests became 97). A guard confirmed that the test suite left its temporary data folder empty. `--vertical-capture` still reaches 37 of 37 waypoints, `--motion-capture` still produces 300 frames (CPU submission mean 1.11 ms, p95 1.62 ms), and `--ui-gallery` now has 19 fixtures. The existing 18 matched their earlier captures within the gallery's normal run-to-run variation (about 50 dB PSNR). Every native run used a temporary `XDG_DATA_HOME`, and `~/.local/share/cinderwake` didn't exist before or after the round. Screenshots and audio plots are in [`media/improvements/round3/`](media/improvements/round3/).
+
+| Item | Commit | How it was verified |
+| --- | --- | --- |
+| A. `--start-at` | `50f0bbe` | Unit tests for argument parsing, every target's position or screen, and using each object straight away. Natively, an unknown target exits with status 2 and a 6-second run wrote nothing. In the browser build with real key presses, `?start=chest` opened the reliquary, **1** took the Furnace Maul and **2** kept the sabre (`a-web-*.jpg`). That closes the check round 2 couldn't do. |
+| B. Biome music | `2367972` | The synthesis script's loop checks: all five loops pass, with seam loudness within ±1.6 dB, and the old track fails at −10.5 dB (`b-loop-seams-old-vs-new.jpg`, `b-music-spectrograms.jpg`). Unit tests cover the track for every screen and biome and an equal-power, 1.5-second crossfade. In the browser, logging the audio sources showed the hearth loop on the title and the Aqueduct loop starting with the run. **Nobody listened**, so the music's quality is unjudged. The loops add 3.7 MB, which takes the wasm from about 49 MB to 52.5 MB. |
+| C. New effects | `1c3cd66` | A game test drives each event (glassbolt, both tools, the combo finisher, wound versus kill, forge and cache refusals, banking, Keeper purchase and refusal, memory and reliquary choices) and checks it queues its cue exactly once. A test checks that every cue's file loads in order. Spectrograms helped remove clicks from `deny`, `select`, and `bank` (`c-new-effect-spectrograms.jpg`). In the browser, real keys triggered the glassbolt, throw, bank, select, and deny sounds. **Not listened to.** |
+| D. Continue a run | `9d447cd` | Unit tests for the round trip (same level, build, and time; carried embers lost; no new descent), Keeper checkpoints, every deletion path, practice isolation, and damaged or impossible files. The test build now stores files in memory, so no test can write to a real data folder. The `ui-18-title-continue` fixture. In the browser with real keys: an injected Keeper checkpoint continued to the Keeper, travelling saved the Foundry arrival, a reload offered and restored it (`d-web-reload-then-continue.jpg`), abandoning deleted it, and **N** replaced it. The plan said to reach the Keeper with `?start=gate`, but practice runs never save, so the checkpoint was injected instead. A native launch with a saved checkpoint ran cleanly, but its title screen couldn't be captured. |
+| E. Remember fullscreen | `74e53b7` | Settings tests; the options fixture with its new row (`e-options-fullscreen-row.jpg`). A temporary probe, since removed, measured the native window at launch: 1024 × 576 logical units windowed, and 3072 × 1728 (3840 × 2160 physical) with fullscreen saved. The browser build deliberately doesn't restore it. |
+
+Findings for a later round:
+
+- Quitting and continuing restarts the current biome from its entrance with the build you arrived with, so it can undo a bad fight. That is the usual save-on-arrival trade-off, but if it matters, deleting the checkpoint once it's loaded (continue once) would close it.
+- The browser lets **F11** through to its own fullscreen as well as the game's. This was already true before this round.
+- A `--start-at` run doesn't save, so anything that depends on saving still needs injected browser storage to test.
+
+Still deferred: new content (14) and a smaller web download (15). Shrinking the art is an owner decision, and the new audio made the download 3.7 MB larger. Gamepad support, web hosting, licenses, and guardian health remain owner decisions.
