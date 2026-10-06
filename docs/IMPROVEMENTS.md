@@ -94,3 +94,18 @@ Six items, ordered so the platform fixes land first.
 - **Gamepad (item 9):** worth adding `gilrs` with only software testing, or should it wait until it can be tested on real hardware?
 - **Web hosting:** the browser build will be produced and tested locally only. Whether and where to host it is the owner's call.
 - **Web download size (item 15):** 42 MB is acceptable for now. Shrinking it means storing smaller runtime copies of the art, which departs from the "source outputs remain unchanged" convention, so it needs the owner's approval.
+
+## Round 1 results (October 6, 2026)
+
+All six scoped items shipped on `improvements`, one commit each. Every commit passed `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, and `cargo test --locked` (61 tests became 77). `--vertical-capture` still reaches 37 of 37 waypoints. Screenshots are in [`media/improvements/`](media/improvements/).
+
+| Item | Commit | How it was verified |
+| --- | --- | --- |
+| A. HUD at any display scale | `dc9cc56` | `--ui-gallery` at 1.25× before and after (`a-hud-*.jpg`); a temporary 1500 × 700 window pillarboxed correctly; unit test of the viewport at 1×, 1.25×, and 2×. Fullscreen (F11) and macOS Retina were not checked by hand. |
+| B. Per-platform save location | `0ae1bd8` | Path-selection unit tests for Linux, macOS, and Windows; a round-trip test in an isolated temporary home; the release binary, launched with a temporary `XDG_DATA_HOME`, read `cinderwake/progress.json` there and created no `~/Library` (observed with inotify). Windows was not run. |
+| C. Browser build | `8e547da` | Headless Chrome 154 at pixel ratios 1 and 1.25: loads with no console errors, starts a run, moves, jumps, opens the atlas and pause screen, and keeps progress in `localStorage` across a reload (`c-web-*.jpg`). Frame rate, audio, and other browsers were not checked. Nothing was deployed. |
+| D. Options and abandon run | `6bc0bb0` | Settings unit tests (defaults, clamping, tolerant loading); game tests for hit-stop, abandon confirmation, options round trip, and shake scaling; `--ui-gallery` fixtures; real key input in the browser changed shake and hit-stop, the values survived a reload, and X X abandoned the run (`d-*.jpg`). Audio levels were not listened to. |
+| E. First-run tips | `209a004` | Tests that each tip fires once, follows the priority order, stays dismissed after the settings round trip, and stays silent in practice or when disabled; a fresh browser run showed the climb, strike, and parry tips during 14 s of real play (`e-*.jpg`). |
+| F. Stage difficulty | `47ed498` | Duel-simulation regression test with numbers recorded in [ENGINE.md](ENGINE.md#build-and-verification); a test that stage travel applies the scaling; a temporary fixture capture of the new Crown gallery guards (`f-crown-gallery-guards.jpg`). No human playtest. |
+
+Deferred to a later round: Linux in CI and Linux packaging (item 7), the chest choice (8), rebinding (10), fog of war (12), audio depth (13), content (14), and a smaller web download (15). Gamepad (9) and web hosting are waiting on owner decisions.
