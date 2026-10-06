@@ -48,7 +48,7 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/ui_skin.rs`](../src/ui_skin.rs) | Generated UI atlas, nine-slice frames, gauges, icons, and crest |
 | [`src/audio.rs`](../src/audio.rs) | Embedded audio, effect dispatch, per-scene music choice, and crossfades |
 | [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress and the run checkpoint |
-| [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute, seen tips, and key bindings |
+| [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute, fullscreen, seen tips, and key bindings |
 | [`src/controls.rs`](../src/controls.rs) | Rebindable gameplay actions, the bindable-key table, and input gathering |
 | [`src/storage.rs`](../src/storage.rs) | Per-platform data directory, atomic file replacement, and browser `localStorage` |
 | [`web/`](../web/) | Browser page and storage plugin used by `scripts/build-web.sh` |
@@ -142,7 +142,7 @@ Each loop is a whole number of bars rendered into a ring buffer: notes that ring
 
 ### Options
 
-**O** opens the options page from the title or pause screen. **W/S** choose a row, **A/D** adjust it, and **Escape** returns and saves. Music and effects volume and screen shake run from 0 to 100% of the original mix in 10% steps; hit-stop, reduced flashes, lighting, and gameplay tips are switches. Settings live in `settings.json` beside the progress file (or under `cinderwake/settings.json` in browser storage), are ignored by practice and capture modes, and change only presentation and comfort: shake scales the presented camera offset, not the simulation's shake timer; reduced flashes dims flash and ring particles to 30% and scales attack and burn lights. Hit-stop is the one exception: turning it off removes the 35 ms freeze when a melee strike lands, which changes simulation timing but not gameplay randomness.
+**O** opens the options page from the title or pause screen. **W/S** choose a row, **A/D** adjust it, and **Escape** returns and saves. Music and effects volume and screen shake run from 0 to 100% of the original mix in 10% steps; hit-stop, reduced flashes, lighting, gameplay tips, and fullscreen are switches. **F11** flips the same fullscreen setting, and desktop builds start fullscreen when it was saved on (checked on Linux: a 3840 × 2160 fullscreen window at launch). Browsers allow fullscreen only after a key press, so the browser build doesn't restore it. Settings live in `settings.json` beside the progress file (or under `cinderwake/settings.json` in browser storage), are ignored by practice and capture modes, and change only presentation and comfort: shake scales the presented camera offset, not the simulation's shake timer; reduced flashes dims flash and ring particles to 30% and scales attack and burn lights. Hit-stop is the one exception: turning it off removes the 35 ms freeze when a melee strike lands, which changes simulation timing but not gameplay randomness.
 
 ### First-run tips
 
@@ -273,7 +273,7 @@ This is a playable prototype, with these limits visible in the current implement
 - Three melee weapons, a small skill set, shared melee artwork, and reused animation poses for some actions.
 - One final boss, one ending, and a limited mutation and upgrade economy. No blueprint unlock tree, extensive affixes/synergies, or traversal-rune progression.
 - An atlas with a simple cell-based fog of war; no challenge modes or DLC systems.
-- Keyboard/mouse controls with rebindable gameplay keys, but no gamepad support; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, lighting, and key bindings.
+- Keyboard/mouse controls with rebindable gameplay keys, but no gamepad support; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, lighting, fullscreen, and key bindings.
 - macOS Apple Silicon and Linux verification only, an experimental browser build tested only in headless Chrome, and local, unpublished packages (an ad-hoc signed macOS app and a Linux tarball).
 - Prototype audio, balancing, encounter variety, and animation coverage. Visual captures and automated tests are complementary checks, not a guarantee of zero defects.
 

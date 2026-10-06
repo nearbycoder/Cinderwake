@@ -15,6 +15,8 @@ pub struct Settings {
     pub reduce_flashes: bool,
     pub postfx: bool,
     pub muted: bool,
+    /// Desktop builds start fullscreen when this is saved on.
+    pub fullscreen: bool,
     /// One-time contextual tips, and which of them have been shown.
     pub hints: bool,
     pub hints_seen: u32,
@@ -31,6 +33,7 @@ impl Default for Settings {
             reduce_flashes: false,
             postfx: true,
             muted: false,
+            fullscreen: false,
             hints: true,
             hints_seen: 0,
             keys: Bindings::default(),
@@ -39,9 +42,9 @@ impl Default for Settings {
 }
 impl Settings {
     pub const FILE: &str = "settings.json";
-    pub const ROWS: usize = 8;
+    pub const ROWS: usize = 9;
     /// The row that opens the controls page instead of adjusting a value.
-    pub const CONTROLS_ROW: usize = 7;
+    pub const CONTROLS_ROW: usize = 8;
 
     pub fn load() -> Self {
         crate::storage::read(Self::FILE)
@@ -100,6 +103,7 @@ impl Settings {
                     self.hints_seen = 0;
                 }
             }
+            7 => self.fullscreen = !self.fullscreen,
             _ => {}
         }
     }
@@ -141,6 +145,11 @@ impl Settings {
                 RowValue::Switch(self.hints),
                 "One-time tips when a mechanic first matters. Switch on again to replay them.",
             ),
+            7 => (
+                "Fullscreen",
+                RowValue::Switch(self.fullscreen),
+                "Fill the screen, also toggled with F11. Desktop builds remember it.",
+            ),
             _ => (
                 "Controls",
                 RowValue::Page,
@@ -169,7 +178,7 @@ mod tests {
         assert_eq!(s.effects_gain(), 0.35);
         assert_eq!(s.shake_scale(), 1.);
         assert_eq!(s.flash_scale(), 1.);
-        assert!(s.hitstop && s.postfx && !s.muted && s.hints);
+        assert!(s.hitstop && s.postfx && !s.muted && s.hints && !s.fullscreen);
     }
 
     #[test]
@@ -195,6 +204,12 @@ mod tests {
         s.adjust(6, 1);
         assert!(s.hints);
         assert_eq!(s.hints_seen, 0, "switching tips on replays them");
+        s.adjust(7, -1);
+        assert!(s.fullscreen);
+        assert_eq!(s.row(7).1, RowValue::Switch(true));
+        assert_eq!(s.row(Settings::CONTROLS_ROW).1, RowValue::Page);
+        let back: Settings = serde_json::from_slice(&serde_json::to_vec(&s).unwrap()).unwrap();
+        assert!(back.fullscreen, "fullscreen is saved");
     }
 
     #[test]

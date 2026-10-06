@@ -609,7 +609,7 @@ impl Ui {
     fn options(&self, g: &Game) {
         self.modal(Rect::new(255., 114., 770., 493.), "Options", 221.);
         for row in 0..Settings::ROWS {
-            let y = 236. + row as f32 * 30.;
+            let y = 232. + row as f32 * 28.;
             let selected = row == g.options_row;
             let (label, value, _) = g.settings.row(row);
             if selected {
@@ -657,11 +657,11 @@ impl Ui {
             }
         }
         let (_, _, help) = g.settings.row(g.options_row);
-        self.center(help, 494., 15., c(MUTED));
-        self.button("ESC   Back", Rect::new(483., 508., 314., 50.));
+        self.center(help, 500., 15., c(MUTED));
+        self.button("ESC   Back", Rect::new(483., 513., 314., 50.));
         self.center(
             "W / S  choose      A / D  adjust      M  mute all sound",
-            580.,
+            584.,
             14.,
             c(MUTED),
         );

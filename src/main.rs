@@ -522,7 +522,15 @@ async fn main() {
     let mut accumulator = 0.;
     let mut pending = Input::default();
     let mut frame = 0u32;
+    // Browsers only allow fullscreen after a key press, so only desktop
+    // builds restore a saved choice at launch.
     let mut fullscreen = false;
+    if cfg!(target_arch = "wasm32") {
+        g.settings.fullscreen = false;
+    } else if g.settings.fullscreen && !staged && !automated {
+        fullscreen = true;
+        set_fullscreen(true);
+    }
     let mut previous_level = (g.level.seed, g.level.biome, g.seed);
     let mut arrival = 0.0_f32;
     let mut render_times = Vec::new();
@@ -548,9 +556,16 @@ async fn main() {
         if !staged && !automated {
             menus(&mut g);
         }
-        if !staged && !automated && is_key_pressed(KeyCode::F11) {
-            fullscreen = !fullscreen;
-            set_fullscreen(fullscreen);
+        if !staged && !automated {
+            if is_key_pressed(KeyCode::F11) {
+                g.settings.fullscreen = !g.settings.fullscreen;
+                g.persist_settings();
+            }
+            // F11 and the options row both change the setting; follow it.
+            if g.settings.fullscreen != fullscreen {
+                fullscreen = g.settings.fullscreen;
+                set_fullscreen(fullscreen);
+            }
         }
         if !staged && !automated && is_key_pressed(KeyCode::F9) {
             g.settings.postfx = !g.settings.postfx;
