@@ -33,6 +33,7 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/main.rs`](../src/main.rs) | Native window, input, fixed-step accumulator, menus, presentation, arrival fade, profiling, and capture modes |
 | [`src/world.rs`](../src/world.rs) | Reproducible PRNG, biome definitions, authored route assembly, platforms, actors, rewards, and support queries |
 | [`src/game.rs`](../src/game.rs) | Player physics, collision, combat, enemy AI, projectiles, inventory, run state, and transitions |
+| [`src/launch.rs`](../src/launch.rs) | `--start-at` testing shortcut: a practice run staged beside a chosen object |
 | [`src/traversal_capture.rs`](../src/traversal_capture.rs) | Normal-input route follower and multi-biome traversal regression checks |
 | [`src/animation.rs`](../src/animation.rs) | Hero states, timer-synchronized action frames, movement-driven strides, landing and hurt reactions |
 | [`src/art.rs`](../src/art.rs) | Character sheets, directional drawing, enemy motion and attack animation, and sprite preview |
@@ -211,6 +212,22 @@ All these modes isolate themselves from your saved progression. Gallery modes ar
 The motion capture starts at reduced health to show healing, then exercises movement, double jump, slam, dodge, melee, parry, glassbolts, grenades, and snares. It demonstrates the actions rather than exhaustively testing every animation transition.
 
 The vertical capture follows ordinary movement, jump, and drop-through inputs from surface to upper galleries, back to surface, into the undercroft, and up to the bellgate. Physics, collision, camera, and animation remain active; enemies and hazards are removed to show the full route. It holds the finished route for one second, reports waypoint completion, and exits. A 90-second timeout stops stalled captures.
+
+### Start beside an object
+
+`--start-at <target>` starts a practice run next to one kind of object so an interaction can be checked with real key presses instead of crossing a level first. In the browser build, add `?start=<target>` to the page address.
+
+| Target | Start |
+| --- | --- |
+| `chest`, `memory`, `well`, `forge`, `cache`, `gate` | Beside the first reliquary, memory scroll, well, forge, sealed cache, or bellgate of the opening Aqueduct |
+| `keeper` | On the Keeper screen after the first stage |
+| `regent` | In the Crown at the arena entrance, with only the Regent left |
+
+```sh
+cargo run --release --locked -- --start-at chest
+```
+
+The run uses the practice seed and isolation: no progress or settings are read or written, tips stay off, and the HUD shows that progress isn't saved. Guardians within chase range of the start point (320 units across, 150 up or down) are removed. The forge start carries 60 copper and the cache start counts eight kills, so both open at once. With the fixed seed, the first reliquary offers the Furnace Maul, so the weapon choice always appears. An unknown target prints the valid list and exits with status 2; the browser build ignores it. This is a testing tool, not a game mode.
 
 Capture directories are reused on subsequent runs. Keep separate copies when comparing versions or shader settings. Videos in the README are edited from capture output; they are not recorded human playthroughs.
 

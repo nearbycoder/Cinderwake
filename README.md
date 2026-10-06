@@ -195,6 +195,8 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo fmt --check
 ```
 
+To try an interaction without crossing a level, `cargo run --release --locked -- --start-at chest` starts a practice run beside it (also `memory`, `well`, `forge`, `cache`, `gate`, `keeper`, and `regent`; see [the engine guide](docs/ENGINE.md#start-beside-an-object)).
+
 Tests cover physics, combat, progression, animation timing, effects, and multi-biome route traversal. Rendered captures provide a separate visual check; passing tests alone does not establish visual quality or exhaustive playability.
 
 ## Art, audio, and credits

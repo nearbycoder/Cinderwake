@@ -463,6 +463,18 @@ impl Game {
         self.persist();
         self.notify("Find the bellgate. Bank your embers. Rise again.");
     }
+    /// Moves the player to a standing position and snaps the camera there.
+    pub fn place_player(&mut self, pos: Vec2) {
+        self.player.pos = pos;
+        self.player.vel = Vec2::ZERO;
+        self.player.ground = true;
+        self.player.face = 1.;
+        self.last_safe_pos = pos;
+        self.camera = (pos.x - 250. + 35.).clamp(0., (self.level.width - 640.).max(0.));
+        self.camera_y = (pos.y - 248.).clamp(self.level.min_y, self.level.max_y - 360.);
+        self.survey
+            .reveal(Rect::new(self.camera, self.camera_y, 640., 360.));
+    }
     pub fn notify(&mut self, s: &str) {
         self.notice = s.into();
         self.notice_time = 4.;

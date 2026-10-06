@@ -5,6 +5,7 @@ mod audio;
 mod controls;
 mod environment;
 mod game;
+mod launch;
 mod particles;
 mod postprocess;
 mod render;
@@ -438,7 +439,15 @@ async fn main() {
     let profile_render = args.iter().any(|s| s == "--profile-render");
     let demo = args.iter().any(|s| s == "--demo") || automated;
     let staged = ui_gallery || gallery || environment_tour;
-    let practice = demo || staged || sprite_preview;
+    let start_at = if cfg!(target_arch = "wasm32") {
+        launch::StartAt::from_page()
+    } else {
+        launch::StartAt::from_args(&args).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(2)
+        })
+    };
+    let practice = demo || staged || sprite_preview || start_at.is_some();
     let seed = if practice {
         4017
     } else {
@@ -464,6 +473,9 @@ async fn main() {
     }
     if practice {
         g.start();
+    }
+    if let Some(target) = start_at {
+        target.apply(&mut g);
     }
     if motion_capture {
         g.player.hp = g.player.max_hp * 0.45;
