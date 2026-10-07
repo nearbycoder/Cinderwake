@@ -580,6 +580,14 @@ impl Game {
     }
     /// Pause-screen abandon: the first request arms, the second ends the run
     /// with the same losses as a death.
+    /// The window or browser tab lost focus: pause a run in progress so
+    /// guardians don't keep attacking an unattended hero.
+    pub fn focus_lost(&mut self) {
+        if self.screen == Screen::Playing {
+            self.screen = Screen::Paused;
+            self.abandon_armed = false;
+        }
+    }
     pub fn prompts(&self) -> Prompts<'_> {
         Prompts::new(&self.settings.keys, self.pad_prompts)
     }
@@ -2425,6 +2433,26 @@ mod tests {
         g.travel();
         assert!(g.survey.fraction() < explored);
         assert!(g.survey.seen(g.level.spawn));
+    }
+    #[test]
+    fn losing_focus_pauses_only_a_run_in_progress() {
+        let mut g = game();
+        g.start();
+        g.focus_lost();
+        assert_eq!(g.screen, Screen::Paused);
+        g.focus_lost();
+        assert_eq!(g.screen, Screen::Paused, "stays paused");
+        for screen in [
+            Screen::Title,
+            Screen::Scroll,
+            Screen::Camp,
+            Screen::Options,
+            Screen::Dead,
+        ] {
+            g.screen = screen;
+            g.focus_lost();
+            assert_eq!(g.screen, screen, "menus already hold the world still");
+        }
     }
     #[test]
     fn controls_page_rebinds_swaps_and_restores() {

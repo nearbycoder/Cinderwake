@@ -157,6 +157,10 @@ Bindings are stored by key name in `settings.json`. Unknown names fall back to t
 
 From the pause screen, **X** asks for confirmation and a second **X** abandons the run with the same losses as a death.
 
+### Pausing on focus loss
+
+When the game loses focus during play, it opens the pause screen (`Game::focus_lost`); other screens are left alone, and capture and staged modes never pause themselves. Macroquad reports focus loss as "minimised": on X11 and XWayland that's the window's FocusOut, and in the browser it's the page losing focus or the tab being hidden. On macOS and native Wayland, Miniquad may report only actual minimising, which hasn't been checked. While the game is out of focus it also ignores controllers, which are otherwise read whatever window is in front, so a pad can't resume the game behind another app. Checked natively on Linux by opening a second game window over the first (the run paused, a pad **Start** press while unfocused was ignored, and **B** resumed after the second window closed) and in headless Chrome by hiding the page through its visibility state.
+
 ### Controllers
 
 [`src/pad.rs`](../src/pad.rs) reads every connected controller once per frame into one `State` (fourteen buttons and the left stick) and maps it to the same `Input` the keyboard produces; `pad::combine` merges the two, and the keyboard's direction wins if both steer. The layout is fixed and listed in the [README](../README.md#with-a-controller). The stick ignores the inner 24% of its travel and reaches a full run at 70%, so a diagonal push still runs; "down" (drop and slam) needs the stick pushed past 60% and nearer straight down than sideways, so running down a slope of the stick doesn't slam. Menus read button presses and stick pushes once each, with no auto-repeat. Numbered choices map to **X / Y / B**, the left, top, and right face buttons, in the order the cards appear.

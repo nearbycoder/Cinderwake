@@ -41,6 +41,25 @@ fn read_input(g: &Game) -> Input {
         },
     )
 }
+/// Watches the window's focus. Macroquad reports losing focus (X11 and
+/// XWayland FocusOut, a hidden or unfocused browser tab) as minimising.
+#[derive(Default)]
+struct FocusWatch {
+    lost: bool,
+    regained: bool,
+}
+impl miniquad::EventHandler for FocusWatch {
+    fn update(&mut self) {}
+    fn draw(&mut self) {}
+    fn window_minimized_event(&mut self) {
+        self.lost = true;
+        self.regained = false;
+    }
+    fn window_restored_event(&mut self) {
+        self.regained = true;
+    }
+}
+
 /// Menu keys pressed this frame, passed in so menus can be tested without a window.
 struct MenuKeys<'a> {
     pressed: &'a dyn Fn(KeyCode) -> bool,
@@ -576,6 +595,8 @@ async fn main() {
         set_fullscreen(true);
     }
     let mut pad = pad::Pad::new();
+    let focus_events = macroquad::input::utils::register_input_subscriber();
+    let mut focused = true;
     let mut previous_level = (g.level.seed, g.level.biome, g.seed);
     let mut arrival = 0.0_f32;
     let mut render_times = Vec::new();
@@ -598,7 +619,25 @@ async fn main() {
             g.time = 4.;
             g.intro = 0.;
         }
-        pad.poll();
+        let mut watch = FocusWatch::default();
+        macroquad::input::utils::repeat_all_miniquad_input(&mut watch, focus_events);
+        if watch.lost {
+            focused = false;
+            // Captures and staged views run unattended, often unfocused.
+            if !staged && !automated {
+                g.focus_lost();
+            }
+        }
+        if watch.regained {
+            focused = true;
+        }
+        // Controllers are read whatever has focus, so they wait until the
+        // game is back in front.
+        if focused {
+            pad.poll();
+        } else {
+            pad.feed(pad::State::default());
+        }
         let screen_before_menus = g.screen;
         if !staged && !automated {
             // Prompts follow whichever device was used last.

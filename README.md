@@ -157,7 +157,7 @@ These are the default keys. Gameplay keys can be rebound under **O** → **Contr
 | **1 / 2 / 3** | Choose a memory, reliquary weapon, or Keeper upgrade |
 | **Enter** | Start, continue, or restart |
 | **Tab** | Show the vertical atlas |
-| **Escape** | Pause and controls |
+| **Escape** | Pause and controls (the game also pauses itself when its window or tab loses focus) |
 | **O** | Options, from the title or pause screen |
 | **X** twice | Abandon the run, from the pause screen |
 | **M** | Mute / unmute |
