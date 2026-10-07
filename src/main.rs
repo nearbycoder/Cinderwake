@@ -365,8 +365,13 @@ enum Cursor {
     Default,
     /// A hand over anything a click would choose.
     Pointer,
+    /// None over the game in play, where a click strikes and doesn't aim.
+    Hidden,
 }
 fn cursor_for(g: &Game) -> Cursor {
+    if g.screen == Screen::Playing {
+        return Cursor::Hidden;
+    }
     match g.pointer.and_then(|at| ui::click_at(g, at)) {
         Some(_) => Cursor::Pointer,
         None => Cursor::Default,
@@ -952,6 +957,7 @@ async fn main() {
             let cursor = cursor_for(&g);
             if cursor != shown_cursor {
                 shown_cursor = cursor;
+                miniquad::window::show_mouse(cursor != Cursor::Hidden);
                 miniquad::window::set_mouse_cursor(if cursor == Cursor::Pointer {
                     miniquad::CursorIcon::Pointer
                 } else {
@@ -1695,6 +1701,34 @@ mod capture_tests {
         };
         follow_devices(&mut g, pad, button);
         assert!(g.pointer.is_none() && g.pad_prompts);
+    }
+
+    #[test]
+    fn the_cursor_hides_only_in_play() {
+        let mut g = Game::new(4017, save::Save::default());
+        g.pointer = Some(vec2(900., 300.));
+        assert_eq!(cursor_for(&g), Cursor::Default, "shown on the title");
+        g.start();
+        assert_eq!(cursor_for(&g), Cursor::Hidden);
+        g.map = true;
+        assert_eq!(cursor_for(&g), Cursor::Hidden, "the atlas is still play");
+        g.map = false;
+        for screen in [
+            Screen::Paused,
+            Screen::Options,
+            Screen::Controls,
+            Screen::Scroll,
+            Screen::Reliquary,
+            Screen::Camp,
+            Screen::Dead,
+            Screen::Victory,
+        ] {
+            g.screen = screen;
+            assert_ne!(cursor_for(&g), Cursor::Hidden, "shown on {screen:?}");
+        }
+        g.screen = Screen::Playing;
+        g.focus_lost();
+        assert_eq!(cursor_for(&g), Cursor::Default, "back when focus pauses");
     }
 
     #[test]
