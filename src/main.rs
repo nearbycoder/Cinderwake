@@ -253,6 +253,26 @@ fn controls_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
     }
 }
 
+// Miniquad's browser loader already provides this; it reports whether the
+// game's canvas is the page's fullscreen element.
+#[cfg(target_arch = "wasm32")]
+extern "C" {
+    fn sapp_is_fullscreen() -> bool;
+}
+/// Browsers can leave fullscreen without the game (their own **Esc**), so the
+/// setting follows each change in the browser's state. `seen` is the browser
+/// state last observed. Returns whether the setting changed.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn follow_browser_fullscreen(setting: &mut bool, seen: &mut bool, browser: bool) -> bool {
+    if browser == *seen {
+        return false;
+    }
+    *seen = browser;
+    let changed = *setting != browser;
+    *setting = browser;
+    changed
+}
+
 /// Presentation-only camera shake, scaled by the player's comfort setting.
 /// Simulated seconds to run for one frame. Scripted modes (captures, the
 /// demo, and the tour) ignore the game-speed option so their output is fixed.
@@ -695,6 +715,8 @@ async fn main() {
     // Browsers only allow fullscreen after a key press, so only desktop
     // builds restore a saved choice at launch.
     let mut fullscreen = false;
+    #[cfg(target_arch = "wasm32")]
+    let mut browser_fullscreen = false;
     if cfg!(target_arch = "wasm32") {
         g.settings.fullscreen = false;
     } else if g.settings.fullscreen && !staged && !automated {
@@ -782,6 +804,21 @@ async fn main() {
             if is_key_pressed(KeyCode::F11) {
                 g.settings.fullscreen = !g.settings.fullscreen;
                 g.persist_settings();
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                // SAFETY: a plain value call into Miniquad's loader.
+                let browser = unsafe { sapp_is_fullscreen() };
+                if follow_browser_fullscreen(
+                    &mut g.settings.fullscreen,
+                    &mut browser_fullscreen,
+                    browser,
+                ) {
+                    // Already applied by the browser; asking it to leave
+                    // again would only log an error.
+                    fullscreen = browser;
+                    g.persist_settings();
+                }
             }
             // F11 and the options row both change the setting; follow it.
             if g.settings.fullscreen != fullscreen {
@@ -1139,6 +1176,25 @@ mod capture_tests {
         run(&mut slow, 120);
         assert!((normal.player.pos.x - slow.player.pos.x).abs() < 0.5);
         assert!((normal.run_time - slow.run_time).abs() < 0.02);
+    }
+    #[test]
+    fn the_fullscreen_setting_follows_the_browser() {
+        // F11 turns the setting on; the browser enters a frame or two later.
+        let (mut setting, mut seen) = (true, false);
+        assert!(!follow_browser_fullscreen(&mut setting, &mut seen, false));
+        assert!(setting, "a pending request isn't undone");
+        assert!(!follow_browser_fullscreen(&mut setting, &mut seen, true));
+        // The browser's Esc leaves fullscreen: the setting follows.
+        assert!(follow_browser_fullscreen(&mut setting, &mut seen, false));
+        assert!(!setting && !seen);
+        // So the next F11 is a real request again, not a catch-up.
+        setting = !setting;
+        assert!(setting);
+        // F11 leaving fullscreen: the browser agrees, nothing to follow.
+        assert!(!follow_browser_fullscreen(&mut setting, &mut seen, true));
+        setting = false;
+        assert!(!follow_browser_fullscreen(&mut setting, &mut seen, false));
+        assert!(!setting);
     }
     #[test]
     fn shake_setting_scales_only_the_presented_camera() {
