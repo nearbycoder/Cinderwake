@@ -398,6 +398,29 @@ fn follow_browser_fullscreen(setting: &mut bool, seen: &mut bool, browser: bool)
     changed
 }
 
+/// Seconds the browser has to enter fullscreen after the game asks.
+const FULLSCREEN_GRACE: f32 = 1.;
+/// Browsers can refuse fullscreen, for example without a recent key press
+/// or under a page policy, and Miniquad doesn't report it. `waited` counts
+/// seconds since the game asked; returns true once the browser has had
+/// `FULLSCREEN_GRACE` without entering it, so the setting can be turned off.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn fullscreen_refused(waited: &mut Option<f32>, browser: bool, dt: f32) -> bool {
+    let Some(seconds) = waited else {
+        return false;
+    };
+    if browser {
+        *waited = None;
+        return false;
+    }
+    *seconds += dt;
+    if *seconds < FULLSCREEN_GRACE {
+        return false;
+    }
+    *waited = None;
+    true
+}
+
 /// Presentation-only camera shake, scaled by the player's comfort setting.
 /// Simulated seconds to run for one frame. Scripted modes (captures, the
 /// demo, and the tour) ignore the game-speed option so their output is fixed.
@@ -870,6 +893,9 @@ async fn main() {
     let mut fullscreen = false;
     #[cfg(target_arch = "wasm32")]
     let mut browser_fullscreen = false;
+    // Seconds since the browser build asked for fullscreen, until it enters.
+    #[cfg(target_arch = "wasm32")]
+    let mut fullscreen_wait: Option<f32> = None;
     if cfg!(target_arch = "wasm32") {
         g.settings.fullscreen = false;
     } else if g.settings.fullscreen && !staged && !automated {
@@ -999,11 +1025,23 @@ async fn main() {
                     fullscreen = browser;
                     g.persist_settings();
                 }
+                if fullscreen_refused(&mut fullscreen_wait, browser, get_frame_time()) {
+                    // The page never left windowed mode, so there's nothing
+                    // to undo; only the setting is wrong.
+                    g.settings.fullscreen = false;
+                    fullscreen = false;
+                    g.persist_settings();
+                    g.notify("The browser didn't allow fullscreen.");
+                }
             }
             // F11 and the options row both change the setting; follow it.
             if g.settings.fullscreen != fullscreen {
                 fullscreen = g.settings.fullscreen;
                 set_fullscreen(fullscreen);
+                #[cfg(target_arch = "wasm32")]
+                {
+                    fullscreen_wait = fullscreen.then_some(0.);
+                }
             }
         }
         if !staged && !automated && is_key_pressed(KeyCode::F9) {
@@ -1376,6 +1414,24 @@ mod capture_tests {
         assert!(!follow_browser_fullscreen(&mut setting, &mut seen, false));
         assert!(!setting);
     }
+    #[test]
+    fn a_refused_browser_fullscreen_gives_up_after_a_second() {
+        let mut waited = None;
+        assert!(!fullscreen_refused(&mut waited, false, 0.5), "not asked");
+        waited = Some(0.);
+        for _ in 0..3 {
+            assert!(!fullscreen_refused(&mut waited, false, 0.25));
+        }
+        assert!(fullscreen_refused(&mut waited, false, 0.25));
+        assert_eq!(waited, None, "and only once");
+        assert!(!fullscreen_refused(&mut waited, false, 1.));
+        // A browser that enters, however slowly, ends the wait.
+        waited = Some(0.);
+        assert!(!fullscreen_refused(&mut waited, false, 0.9));
+        assert!(!fullscreen_refused(&mut waited, true, 0.2));
+        assert_eq!(waited, None);
+    }
+
     #[test]
     fn shake_setting_scales_only_the_presented_camera() {
         let mut g = Game::new(4017, save::Save::default());

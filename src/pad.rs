@@ -366,6 +366,13 @@ extern "C" {
     fn cinderwake_pad_axis(index: u32) -> f32;
     fn cinderwake_pad_count() -> u32;
 }
+/// Lets the JS plugin confirm that it matches this build. Without it,
+/// Miniquad's loader logs that the plugin isn't used.
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub extern "C" fn cinderwake_pad_crate_version() -> u32 {
+    1
+}
 #[cfg(target_arch = "wasm32")]
 struct Backend;
 #[cfg(target_arch = "wasm32")]
