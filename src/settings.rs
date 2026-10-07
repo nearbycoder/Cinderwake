@@ -50,11 +50,10 @@ impl Settings {
     pub const CONTROLS_ROW: usize = 9;
     pub const SLOWEST: u8 = 5;
 
-    pub fn load() -> Self {
-        crate::storage::read(Self::FILE)
-            .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
-            .unwrap_or_default()
-            .sanitized()
+    /// Settings, and the damaged file if it couldn't be read.
+    pub fn load() -> (Self, Option<crate::save::Unreadable>) {
+        let (settings, unreadable) = crate::save::load_json::<Self>(Self::FILE);
+        (settings.unwrap_or_default().sanitized(), unreadable)
     }
     pub fn store(&self) -> io::Result<()> {
         crate::storage::write(Self::FILE, &serde_json::to_vec_pretty(self)?)

@@ -270,7 +270,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 24] = [
+const UI_GALLERY_NAMES: [&str; 25] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -295,6 +295,7 @@ const UI_GALLERY_NAMES: [&str; 24] = [
     "ui-21-pad-camp",
     "ui-22-pad-memory",
     "ui-23-paused-quit",
+    "ui-24-title-unreadable-save",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -491,6 +492,20 @@ fn ui_fixture(index: usize) -> Game {
             g.screen = Screen::Paused;
             g.request_quit();
         }
+        24 => {
+            g.screen = Screen::Title;
+            g.save = save::Save::default();
+            g.unreadable = vec![
+                save::Unreadable {
+                    file: save::Save::FILE,
+                    kept: Ok("progress.unreadable.json".into()),
+                },
+                save::Unreadable {
+                    file: settings::Settings::FILE,
+                    kept: Ok("settings.unreadable.json".into()),
+                },
+            ];
+        }
         14 => {
             g.screen = Screen::Reliquary;
             g.offer = Some(Weapon::Hammer);
@@ -619,20 +634,12 @@ async fn main() {
         // `std::time` is unavailable in the browser; miniquad's clock is portable.
         miniquad::date::now() as u64
     };
-    let mut g = Game::new(
-        seed,
-        if practice {
-            save::Save::default()
-        } else {
-            save::Save::load()
-        },
-    );
+    let mut g = if practice {
+        Game::new(seed, save::Save::default())
+    } else {
+        Game::load(seed)
+    };
     g.practice = practice;
-    if !practice {
-        g.settings = settings::Settings::load();
-        g.teach = true;
-        g.resume = save::Checkpoint::load();
-    }
     // A launch flag disables lighting for this session without saving the choice.
     if no_postfx {
         g.settings.postfx = false;

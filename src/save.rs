@@ -1,7 +1,34 @@
 use crate::game::Weapon;
 use crate::world::Biome;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::io;
+
+/// A saved file that existed but couldn't be read, and where its bytes went.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unreadable {
+    pub file: &'static str,
+    /// The copy's name, or why no copy could be made.
+    pub kept: Result<String, String>,
+}
+/// Reads a JSON file. Bytes that exist but don't parse are copied aside
+/// first: the defaults used instead are written back over the file as soon
+/// as anything is saved, which used to lose the damaged file for good.
+pub fn load_json<T: DeserializeOwned>(file: &'static str) -> (Option<T>, Option<Unreadable>) {
+    let Some(bytes) = crate::storage::read(file) else {
+        return (None, None);
+    };
+    // An empty file holds nothing worth keeping.
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return (None, None);
+    }
+    match serde_json::from_slice(&bytes) {
+        Ok(value) => (Some(value), None),
+        Err(_) => {
+            let kept = crate::storage::keep_unreadable(file, &bytes).map_err(|e| e.to_string());
+            (None, Some(Unreadable { file, kept }))
+        }
+    }
+}
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Save {
@@ -20,11 +47,10 @@ pub struct Save {
 }
 impl Save {
     pub const FILE: &str = "progress.json";
-    pub fn load() -> Self {
-        crate::storage::read(Self::FILE)
-            .and_then(|s| serde_json::from_slice::<Self>(&s).ok())
-            .unwrap_or_default()
-            .sanitized()
+    /// Progress, and the damaged file if it couldn't be read.
+    pub fn load() -> (Self, Option<Unreadable>) {
+        let (save, unreadable) = load_json::<Self>(Self::FILE);
+        (save.unwrap_or_default().sanitized(), unreadable)
     }
     /// Drops records no run could have set.
     fn sanitized(mut self) -> Self {

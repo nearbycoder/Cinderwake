@@ -135,7 +135,7 @@ Progress is stored in `progress.json` in your per-user data folder:
 | Linux | `$XDG_DATA_HOME/cinderwake/` (usually `~/.local/share/cinderwake/`) |
 | Windows | `%APPDATA%\Cinderwake\` (not yet tested on Windows) |
 
-Move that file aside to reset progression. Options are saved next to it in `settings.json`, and a run in progress in `run.json`. On Linux, a save left at the old macOS-style path by earlier builds is still read until a new one is written. Capture and practice modes do not read or write your save.
+Move that file aside to reset progression. Options are saved next to it in `settings.json`, and a run in progress in `run.json`. If `progress.json` or `settings.json` is ever damaged, the game copies it to `progress.unreadable.json` (or `settings.unreadable.json`) before starting fresh, and the title screen says so. On Linux, a save left at the old macOS-style path by earlier builds is still read until a new one is written. Capture and practice modes do not read or write your save.
 
 ## Controls
 
@@ -196,7 +196,7 @@ Cinderwake uses a **custom game framework on Macroquad**. Rust owns the fixed-st
 | Particles | A bounded pool of 512 particles; sparks, debris, smoke, dust, motes, shockwaves, and flashes |
 | Rendering | 640 × 360 world coordinates rendered at 1280 × 720, with nearest-neighbor sampling |
 | Post-processing | Separable selective bloom, biome grading, vignette, and up to eight dynamic combat lights; unfiltered fallback |
-| Persistence | Version-tolerant JSON; atomic file replacement; isolated practice modes |
+| Persistence | Version-tolerant JSON; atomic file replacement; unreadable files kept aside; isolated practice modes |
 
 The [engine guide](docs/ENGINE.md) includes the source map, rendering pipeline, asset workflow, save behavior, verification commands, and reproducible capture modes.
 

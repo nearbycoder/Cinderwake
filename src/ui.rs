@@ -176,6 +176,7 @@ impl Ui {
             15.,
             c(MUTED),
         );
+        self.unreadable_notice(g);
         if g.quit_armed {
             self.centered_at(
                 &format!("Press {} again to quit.", p.menu(Menu::QuitTitle)),
@@ -201,6 +202,37 @@ impl Ui {
                 14.,
                 c(MUTED),
             );
+        }
+    }
+    /// Names any saved file that couldn't be read at launch and where its
+    /// bytes were kept, so a damaged save is never replaced without a word.
+    fn unreadable_notice(&self, g: &Game) {
+        if g.unreadable.is_empty() {
+            return;
+        }
+        let height = 84. + 58. * g.unreadable.len() as f32;
+        let rect = Rect::new(700., 672. - height, 540., height);
+        self.skin.panel(rect);
+        self.heading("A saved file couldn't be read", 970., rect.y + 52., 31.);
+        for (i, damaged) in g.unreadable.iter().enumerate() {
+            let y = rect.y + 84. + 58. * i as f32;
+            let lost = if damaged.file == crate::settings::Settings::FILE {
+                "options are back to their defaults"
+            } else {
+                "progress starts fresh"
+            };
+            self.centered_at(
+                &format!("{} couldn't be read, so {lost}.", damaged.file),
+                970.,
+                y,
+                15.,
+                c(PALE),
+            );
+            let (kept, color) = match &damaged.kept {
+                Ok(copy) => (format!("The damaged file is kept as {copy}."), c(TEAL)),
+                Err(e) => (format!("It couldn't be copied aside: {e}"), c(0xef9c81)),
+            };
+            self.centered_at(&kept, 970., y + 22., 15., color);
         }
     }
     fn hud(&self, g: &Game) {

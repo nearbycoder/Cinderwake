@@ -2,7 +2,7 @@ pub use crate::particles::Particle;
 use crate::{
     controls::{Action, Prompts},
     particles::{self, Effect, VisualRng},
-    save::{Checkpoint, Save},
+    save::{Checkpoint, Save, Unreadable},
     settings::Settings,
     world::*,
 };
@@ -417,6 +417,8 @@ pub struct Game {
     pub intro: f32,
     pub route: usize,
     pub save_error: Option<String>,
+    /// Saved files found damaged at launch, kept aside and named on the title.
+    pub unreadable: Vec<Unreadable>,
     /// A saved run the title screen offers to continue.
     pub resume: Option<Checkpoint>,
     pub practice: bool,
@@ -549,6 +551,7 @@ impl Game {
             intro: 4.,
             route: 0,
             save_error: None,
+            unreadable: vec![],
             resume: None,
             practice: false,
             last_safe_pos,
@@ -556,6 +559,18 @@ impl Game {
             recap: None,
             result_time: 0.,
         }
+    }
+    /// Normal play: progress, settings, and any run to continue, from
+    /// storage. A damaged progress or settings file is kept aside first.
+    pub fn load(seed: u64) -> Self {
+        let (save, damaged_save) = Save::load();
+        let (settings, damaged_settings) = Settings::load();
+        let mut g = Self::new(seed, save);
+        g.settings = settings;
+        g.teach = true;
+        g.resume = Checkpoint::load();
+        g.unreadable = damaged_save.into_iter().chain(damaged_settings).collect();
+        g
     }
     pub fn persist(&mut self) {
         if !self.practice {
@@ -2912,6 +2927,67 @@ mod tests {
         use_exit(&mut g);
         assert_eq!(g.screen, Screen::Victory);
         assert!(stored_checkpoint().is_none());
+    }
+
+    #[test]
+    fn damaged_saves_are_kept_aside_before_anything_overwrites_them() {
+        use crate::storage;
+        let damaged = b"{\"embers\": 412, \"vitality\": 3,".to_vec();
+        storage::write(Save::FILE, &damaged).unwrap();
+        storage::write(Settings::FILE, b"\x00\x01 not json").unwrap();
+        let mut g = Game::load(9);
+        assert_eq!(g.save.embers, 0, "play carries on with defaults");
+        assert_eq!(g.settings, Settings::default());
+        assert_eq!(
+            g.unreadable,
+            vec![
+                Unreadable {
+                    file: Save::FILE,
+                    kept: Ok("progress.unreadable.json".into())
+                },
+                Unreadable {
+                    file: Settings::FILE,
+                    kept: Ok("settings.unreadable.json".into())
+                },
+            ]
+        );
+        // Starting a run writes progress straight away; the copy survives it.
+        g.start();
+        let fresh: Save = serde_json::from_slice(&storage::read(Save::FILE).unwrap()).unwrap();
+        assert_eq!(fresh.runs, 1);
+        assert_eq!(storage::read("progress.unreadable.json").unwrap(), damaged);
+
+        // Settings are written only when changed, so the same damaged file
+        // is found again next launch; it's named again but not copied twice.
+        // A different damaged file gets its own copy, and the first stays.
+        storage::write(Save::FILE, b"[1, 2").unwrap();
+        let g = Game::load(10);
+        assert_eq!(
+            g.unreadable
+                .iter()
+                .map(|u| u.kept.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                Ok("progress.unreadable-2.json".into()),
+                Ok("settings.unreadable.json".into())
+            ]
+        );
+        assert_eq!(storage::read("progress.unreadable.json").unwrap(), damaged);
+        assert_eq!(
+            storage::read("progress.unreadable-2.json").unwrap(),
+            b"[1, 2"
+        );
+
+        // Readable, empty, and missing files make no copies.
+        storage::write(Save::FILE, b"{\"embers\": 5}").unwrap();
+        storage::write(Settings::FILE, b"  ").unwrap();
+        let g = Game::load(11);
+        assert!(g.unreadable.is_empty());
+        assert_eq!(g.save.embers, 5);
+        storage::remove(Save::FILE).unwrap();
+        storage::remove(Settings::FILE).unwrap();
+        assert!(Game::load(12).unreadable.is_empty());
+        assert!(storage::read("settings.unreadable-2.json").is_none());
     }
 
     #[test]

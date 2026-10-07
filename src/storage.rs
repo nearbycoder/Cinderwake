@@ -12,6 +12,30 @@ pub use desktop::{read, remove, write};
 #[cfg(test)]
 pub use memory::{read, remove, write};
 
+/// Copies a file that exists but couldn't be read to `<stem>.unreadable.json`,
+/// or `<stem>.unreadable-2.json` and so on if other copies exist, so nothing
+/// saved later can overwrite it. A file already kept with the same bytes
+/// isn't copied again. Returns the copy's name.
+pub fn keep_unreadable(name: &str, bytes: &[u8]) -> std::io::Result<String> {
+    let stem = name.strip_suffix(".json").unwrap_or(name);
+    let mut copies = (1..=9).map(|n| match n {
+        1 => format!("{stem}.unreadable.json"),
+        n => format!("{stem}.unreadable-{n}.json"),
+    });
+    loop {
+        let Some(copy) = copies.next() else {
+            return Err(std::io::Error::other(
+                "nine unreadable copies are already kept",
+            ));
+        };
+        match read(&copy) {
+            Some(kept) if kept == bytes => return Ok(copy),
+            Some(_) => {}
+            None => return write(&copy, bytes).map(|()| copy),
+        }
+    }
+}
+
 #[cfg(test)]
 mod memory {
     use std::{cell::RefCell, collections::HashMap, io};
@@ -203,6 +227,22 @@ mod tests {
             data_dir_for("windows", env(&[("APPDATA", "C:/Users/a/AppData/Roaming")])),
             PathBuf::from("C:/Users/a/AppData/Roaming/Cinderwake")
         );
+    }
+
+    #[test]
+    fn unreadable_copies_never_overwrite_each_other() {
+        // `keep_unreadable` runs on the in-memory test store.
+        for n in 1..=9u8 {
+            let copy = super::keep_unreadable("limit.json", &[n]).unwrap();
+            assert_eq!(super::read(&copy).unwrap(), [n]);
+        }
+        assert_eq!(
+            super::keep_unreadable("limit.json", &[3]).unwrap(),
+            "limit.unreadable-3.json",
+            "a file already kept isn't copied again"
+        );
+        assert!(super::keep_unreadable("limit.json", &[10]).is_err());
+        assert_eq!(super::read("limit.unreadable.json").unwrap(), [1]);
     }
 
     #[test]
