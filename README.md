@@ -143,7 +143,7 @@ These are the default keys. Gameplay keys can be rebound under **O** → **Contr
 
 | Input | Action |
 | --- | --- |
-| **A / D** or **← / →** | Move; choose a route at the Keeper's rest |
+| **A / D** or **← / →** | Move; choose a route at the Keeper's rest; on the options page, hold to keep adjusting |
 | **Space / W / ↑** | Jump; press again for a double jump |
 | **S / ↓ + Space** on a ledge | Drop through that ledge |
 | **S / ↓** while falling | Ground slam |

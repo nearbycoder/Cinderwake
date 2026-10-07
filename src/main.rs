@@ -151,6 +151,64 @@ struct MenuKeys<'a> {
     click: Option<Vec2>,
     /// Where the mouse moved to this frame, if it moved.
     hover: Option<Vec2>,
+    /// A held direction repeating this frame (`MenuRepeat`).
+    repeat: Option<pad::Dir>,
+}
+/// Seconds a menu direction is held before it repeats, and between repeats.
+const REPEAT_DELAY: f32 = 0.4;
+const REPEAT_EVERY: f32 = 0.1;
+/// Fixed menu keys for each direction.
+fn menu_keys(d: pad::Dir) -> [KeyCode; 2] {
+    match d {
+        pad::Dir::Up => [KeyCode::W, KeyCode::Up],
+        pad::Dir::Down => [KeyCode::S, KeyCode::Down],
+        pad::Dir::Left => [KeyCode::A, KeyCode::Left],
+        pad::Dir::Right => [KeyCode::D, KeyCode::Right],
+    }
+}
+/// Holding a direction on the options and controls pages repeats it, so a
+/// bar or a long list doesn't take a press per step. The press itself is
+/// handled as before; this only adds the repeats that follow.
+#[derive(Default)]
+struct MenuRepeat {
+    held: Option<pad::Dir>,
+    time: f32,
+}
+impl MenuRepeat {
+    /// Only the options and controls pages repeat, and not while a key is
+    /// being listened for.
+    fn applies(g: &Game) -> bool {
+        matches!(g.screen, Screen::Options | Screen::Controls) && !g.rebinding
+    }
+    /// The direction to follow this frame: the one already held, or else
+    /// the first held, given whether each is down.
+    fn choose(&self, down: impl Fn(pad::Dir) -> bool) -> Option<pad::Dir> {
+        use pad::Dir;
+        self.held.filter(|d| down(*d)).or_else(|| {
+            [Dir::Up, Dir::Down, Dir::Left, Dir::Right]
+                .into_iter()
+                .find(|d| down(*d))
+        })
+    }
+    /// Given the direction held this frame and the real seconds since the
+    /// last, returns it on each frame where it repeats.
+    fn update(&mut self, held: Option<pad::Dir>, dt: f32) -> Option<pad::Dir> {
+        if held != self.held {
+            // A new direction (or none): its press acts on its own.
+            *self = Self { held, time: 0. };
+            return None;
+        }
+        let repeats = |t: f32| {
+            if t < REPEAT_DELAY {
+                0
+            } else {
+                1 + ((t - REPEAT_DELAY) / REPEAT_EVERY) as u32
+            }
+        };
+        let before = repeats(self.time);
+        self.time += dt;
+        held.filter(|_| repeats(self.time) > before)
+    }
 }
 /// A window point in interface coordinates (1280 × 720), given the
 /// letterboxed frame in the same logical units as the mouse.
@@ -339,6 +397,22 @@ fn options_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
     if pressed(&[KeyCode::S, KeyCode::Down]) || pad.nav(Dir::Down) {
         g.options_row = (g.options_row + 1) % rows;
     }
+    // Repeats stop at the ends instead of wrapping, and step only bars.
+    match keys.repeat {
+        Some(Dir::Up) => g.options_row = g.options_row.saturating_sub(1),
+        Some(Dir::Down) => g.options_row = (g.options_row + 1).min(rows - 1),
+        Some(d @ (Dir::Left | Dir::Right))
+            if matches!(g.settings.row(g.options_row).1, RowValue::Level(_)) =>
+        {
+            let before = g.settings.clone();
+            g.settings
+                .adjust(g.options_row, if d == Dir::Left { -1 } else { 1 });
+            if g.settings != before {
+                g.sounds.push(Sfx::Select);
+            }
+        }
+        _ => {}
+    }
     let forward = pressed(&[KeyCode::D, KeyCode::Right, KeyCode::Enter, KeyCode::Space])
         || pad.nav(Dir::Right)
         || pad.pressed(Button::South);
@@ -390,6 +464,11 @@ fn controls_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
     }
     if pressed(&[KeyCode::S, KeyCode::Down]) || pad.nav(Dir::Down) {
         g.controls_row = (g.controls_row + 1) % rows;
+    }
+    match keys.repeat {
+        Some(Dir::Up) => g.controls_row = g.controls_row.saturating_sub(1),
+        Some(Dir::Down) => g.controls_row = (g.controls_row + 1).min(rows - 1),
+        _ => {}
     }
     if pressed(&[KeyCode::Enter, KeyCode::Space])
         || pad.pressed(Button::South)
@@ -1050,6 +1129,7 @@ async fn main() {
     }
     let mut pad = pad::Pad::new();
     let mut mouse_held_over = false;
+    let mut menu_repeat = MenuRepeat::default();
     let mut last_mouse = Vec2::ZERO;
     let mut shown_cursor = Cursor::Default;
     let focus_events = macroquad::input::utils::register_input_subscriber();
@@ -1119,11 +1199,19 @@ async fn main() {
                 mouse,
             );
             let pressed = |k| is_key_pressed(k);
+            let held = if MenuRepeat::applies(&g) {
+                menu_repeat
+                    .choose(|d| pad.holding(d) || menu_keys(d).iter().any(|k| is_key_down(*k)))
+            } else {
+                None
+            };
+            let repeat = menu_repeat.update(held, get_frame_time());
             let keys = MenuKeys {
                 pressed: &pressed,
                 last: get_last_key_pressed(),
                 click: clicked.then_some(mouse),
                 hover: moved.then_some(mouse),
+                repeat,
             };
             menus(&mut g, &keys, &pad);
             let cursor = cursor_for(&g);
@@ -1627,6 +1715,104 @@ mod capture_tests {
         assert_eq!(g.shake, 6., "the simulation's shake timer is untouched");
     }
 
+    /// Holds a key or controller buttons for `seconds` of 60 Hz frames, the
+    /// way the main loop reads them, then releases them.
+    fn hold(g: &mut Game, key: Option<KeyCode>, buttons: &[pad::Button], seconds: f32) {
+        let mut repeat = MenuRepeat::default();
+        let mut pad = pad::Pad::new();
+        let frames = (seconds * 60.).round() as u32;
+        for frame in 0..=frames {
+            let down = frame < frames;
+            pad.feed(if down {
+                pad::State::with(buttons, Vec2::ZERO)
+            } else {
+                pad::State::default()
+            });
+            let pressed = |k: KeyCode| frame == 0 && Some(k) == key;
+            let held = if MenuRepeat::applies(g) {
+                repeat.choose(|d| {
+                    down && (pad.holding(d) || key.is_some_and(|k| menu_keys(d).contains(&k)))
+                })
+            } else {
+                None
+            };
+            let keys = MenuKeys {
+                pressed: &pressed,
+                last: None,
+                click: None,
+                hover: None,
+                repeat: repeat.update(held, 1. / 60.),
+            };
+            menus(g, &keys, &pad);
+        }
+    }
+
+    #[test]
+    fn held_directions_repeat_after_a_pause() {
+        use pad::Dir::*;
+        let mut r = MenuRepeat::default();
+        let fired: Vec<u32> = (0..60)
+            .filter(|_| r.update(Some(Left), 1. / 60.).is_some())
+            .collect();
+        // The press acts by itself; repeats follow at 0.4 s, then every 0.1 s.
+        assert_eq!(fired.len(), 6, "{fired:?}");
+        assert!((24..=25).contains(&fired[0]), "{fired:?}");
+        assert_eq!(r.update(None, 1. / 60.), None, "releasing stops at once");
+        assert_eq!(
+            r.update(Some(Right), 0.5),
+            None,
+            "a new direction starts over"
+        );
+        assert_eq!(r.update(Some(Right), 0.39), None);
+        assert_eq!(r.update(Some(Right), 0.02), Some(Right));
+        // A direction already held is kept while another joins it.
+        let r = MenuRepeat {
+            held: Some(Down),
+            time: 1.,
+        };
+        assert_eq!(r.choose(|_| true), Some(Down));
+        assert_eq!(r.choose(|d| d == Left), Some(Left));
+    }
+
+    #[test]
+    fn holding_steps_bars_and_rows_without_wrapping() {
+        use pad::Button::*;
+        let mut g = Game::new(4017, save::Save::default());
+        g.open_options();
+        assert_eq!((g.options_row, g.settings.music), (0, 10));
+        hold(&mut g, Some(KeyCode::A), &[], 0.3);
+        assert_eq!(g.settings.music, 9, "a short hold is one step");
+        g.sounds.clear();
+        hold(&mut g, Some(KeyCode::A), &[], 1.5);
+        assert_eq!(g.settings.music, 0, "a long hold keeps stepping");
+        assert_eq!(g.sounds.len(), 9, "one cue per change, and none at the end");
+        hold(&mut g, Some(KeyCode::Right), &[], 0.75);
+        assert_eq!(g.settings.music, 5, "the press and four repeats");
+        // A controller held down walks the rows and stops at the last.
+        hold(&mut g, None, &[DpadDown], 2.);
+        assert_eq!(g.options_row, settings::Settings::CONTROLS_ROW);
+        assert_eq!(g.screen, Screen::Options, "repeats don't open the controls");
+        hold(&mut g, Some(KeyCode::Up), &[], 0.3);
+        assert_eq!(g.options_row, settings::Settings::CONTROLS_ROW - 1);
+        // Switches flip once per press, however long it's held.
+        g.options_row = 3;
+        let hitstop = g.settings.hitstop;
+        hold(&mut g, None, &[DpadRight], 1.5);
+        assert_eq!(g.settings.hitstop, !hitstop);
+        // Up to the first row, where it stops.
+        hold(&mut g, Some(KeyCode::W), &[], 2.);
+        assert_eq!(g.options_row, 0);
+        // The controls page: down to restore, never round to the top.
+        g.open_controls();
+        hold(&mut g, Some(KeyCode::S), &[], 2.);
+        assert_eq!(g.controls_row, controls::Action::ALL.len());
+        // Nothing moves while a key is being listened for.
+        g.controls_row = 2;
+        g.rebinding = true;
+        hold(&mut g, None, &[DpadDown], 1.5);
+        assert_eq!(g.controls_row, 2);
+    }
+
     #[test]
     fn a_controller_reaches_every_menu() {
         use pad::Button::*;
@@ -1636,6 +1822,7 @@ mod capture_tests {
             last: None,
             click: None,
             hover: None,
+            repeat: None,
         };
         let mut pad = pad::Pad::new();
         // One frame with the buttons down, then one with them released.
@@ -1719,6 +1906,7 @@ mod capture_tests {
                 last: None,
                 click: Some(vec2(x, y)),
                 hover: None,
+                repeat: None,
             };
             menus(g, &keys, &pad);
         };
@@ -1800,6 +1988,7 @@ mod capture_tests {
                 last,
                 click: Some(point).filter(|_| last.is_none()),
                 hover: None,
+                repeat: None,
             };
             menus(g, &keys, &pad);
         };
@@ -1862,6 +2051,7 @@ mod capture_tests {
                 last: None,
                 click: Some(centre(g, target)),
                 hover: None,
+                repeat: None,
             };
             menus(g, &keys, &pad);
         };
@@ -2063,6 +2253,7 @@ mod capture_tests {
                 last: None,
                 click: None,
                 hover: at,
+                repeat: None,
             };
             menus(g, &keys, &pad);
         };

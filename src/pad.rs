@@ -234,6 +234,10 @@ impl Pad {
     pub fn pressed(&self, b: Button) -> bool {
         self.now.down(b) && !self.before.down(b)
     }
+    /// A menu direction held this frame, however long ago it started.
+    pub fn holding(&self, d: Dir) -> bool {
+        self.now.toward(d)
+    }
     /// A menu direction that started this frame.
     pub fn nav(&self, d: Dir) -> bool {
         self.now.toward(d) && !self.before.toward(d)
