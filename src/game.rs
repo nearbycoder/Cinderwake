@@ -107,6 +107,45 @@ impl Hint {
     }
 }
 pub const HINT_SECONDS: f32 = 6.;
+/// Seconds before the death and victory screens accept confirming.
+pub const RESULT_DELAY: f32 = 1.;
+/// What ended a run.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Cause {
+    Strike(EnemyKind),
+    Bolt(EnemyKind),
+    Hazard,
+    Abandoned,
+}
+impl Cause {
+    pub fn text(self) -> &'static str {
+        match self {
+            Self::Strike(EnemyKind::Warden) => "Cut down by a warden",
+            Self::Strike(EnemyKind::Brute) => "Crushed by a brute",
+            Self::Strike(EnemyKind::Moth) => "Brought down by a clockwork moth",
+            Self::Strike(EnemyKind::Archer) => "Struck down by an archer",
+            Self::Strike(EnemyKind::Regent) => "Struck down by the Brass Regent",
+            Self::Bolt(EnemyKind::Regent) => "Shot down by the Brass Regent",
+            Self::Bolt(_) => "Shot down by an archer",
+            Self::Hazard => "Caught on the spikes",
+            Self::Abandoned => "The descent was abandoned",
+        }
+    }
+}
+/// The run that just ended, shown on the death and victory screens.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Recap {
+    /// What ended the run; `None` for a victory.
+    pub cause: Option<Cause>,
+    pub biome: Biome,
+    pub stage: u32,
+    /// Carried embers lost on death, or banked at the final gate.
+    pub embers: u32,
+    /// Records this run beat.
+    pub new_kills: bool,
+    pub new_stage: bool,
+    pub new_time: bool,
+}
 impl Screen {
     /// Menus that hold the world still and discard gameplay input.
     pub fn freezes_world(self) -> bool {
@@ -236,6 +275,14 @@ impl Player {
             mutation: 0,
         }
     }
+    /// The run mutation bought from the Keeper, if any.
+    pub fn mutation_name(&self) -> Option<&'static str> {
+        match self.mutation {
+            1 => Some("Mending"),
+            2 => Some("Swift skills"),
+            _ => None,
+        }
+    }
     pub fn rect(&self) -> Rect {
         Rect::new(self.pos.x - 7., self.pos.y - 28., 14., 28.)
     }
@@ -262,6 +309,8 @@ pub struct Shot {
     pub damage: f32,
     pub hostile: bool,
     pub kind: u8,
+    /// The guardian that fired a hostile bolt, named if it ends the run.
+    pub from: Option<EnemyKind>,
 }
 #[derive(Clone)]
 pub struct Trap {
@@ -374,6 +423,12 @@ pub struct Game {
     /// Prompts name controller buttons while a controller was used last.
     pub pad_prompts: bool,
     last_safe_pos: Vec2,
+    /// The last thing that wounded the hero, named if the run ends.
+    pub cause: Cause,
+    /// The ended run, for the death and victory screens.
+    pub recap: Option<Recap>,
+    /// Seconds the death or victory screen has been open.
+    pub result_time: f32,
 }
 
 /// One-way surfaces only catch downward crossings. Taking the highest crossed
@@ -497,6 +552,9 @@ impl Game {
             resume: None,
             practice: false,
             last_safe_pos,
+            cause: Cause::Hazard,
+            recap: None,
+            result_time: 0.,
         }
     }
     pub fn persist(&mut self) {
@@ -561,12 +619,13 @@ impl Game {
             life: 1.,
         });
     }
-    pub fn hurt(&mut self, damage: f32, dir: f32) {
+    pub fn hurt(&mut self, damage: f32, dir: f32, cause: Cause) {
         let p = &mut self.player;
         if p.invuln > 0. || p.dodge > 0. || p.hp <= 0. {
             return;
         }
         p.hp = (p.hp - damage).max(0.);
+        self.cause = cause;
         p.invuln = 0.9;
         p.vel.x = dir * 190.;
         p.heal_time = 0.;
@@ -580,9 +639,46 @@ impl Game {
     fn die(&mut self) {
         self.clear_checkpoint();
         self.screen = Screen::Dead;
-        self.save.best_kills = self.save.best_kills.max(self.player.kills);
+        self.result_time = 0.;
+        self.recap = Some(self.record_run(Some(self.cause), self.player.embers));
         self.player.embers = 0;
         self.persist();
+    }
+    /// Compares the run that just ended with the saved records, updates
+    /// them, and returns the recap the result screen shows. A record counts
+    /// as new only when it beats one already saved, and practice runs never
+    /// change records.
+    fn record_run(&mut self, cause: Option<Cause>, embers: u32) -> Recap {
+        let mut recap = Recap {
+            cause,
+            biome: self.level.biome,
+            stage: self.stage,
+            embers,
+            new_kills: false,
+            new_stage: false,
+            new_time: false,
+        };
+        if self.practice {
+            return recap;
+        }
+        let s = &mut self.save;
+        recap.new_kills = s.best_kills > 0 && self.player.kills > s.best_kills;
+        s.best_kills = s.best_kills.max(self.player.kills);
+        recap.new_stage = s.best_stage.is_some_and(|best| self.stage > best);
+        s.best_stage = Some(s.best_stage.map_or(self.stage, |best| best.max(self.stage)));
+        if cause.is_none() {
+            recap.new_time = s.best_time.is_some_and(|best| self.run_time < best);
+            s.best_time = Some(
+                s.best_time
+                    .map_or(self.run_time, |best| best.min(self.run_time)),
+            );
+        }
+        recap
+    }
+    /// The result screens ignore confirming for their first second, so a
+    /// button still held or mashed as the run ends doesn't skip the recap.
+    pub fn result_ready(&self) -> bool {
+        self.result_time >= RESULT_DELAY
     }
     /// Pause-screen abandon: the first request arms, the second ends the run
     /// with the same losses as a death.
@@ -624,6 +720,7 @@ impl Game {
         if self.abandon_armed {
             self.abandon_armed = false;
             self.player.hp = 0.;
+            self.cause = Cause::Abandoned;
             self.die();
         } else {
             self.abandon_armed = true;
@@ -835,6 +932,9 @@ impl Game {
             t.pos.y -= 22. * dt;
         }
         self.texts.retain(|t| t.life > 0.);
+        if matches!(self.screen, Screen::Dead | Screen::Victory) {
+            self.result_time += dt;
+        }
         if self.screen != Screen::Playing {
             return;
         }
@@ -1021,6 +1121,7 @@ impl Game {
                 damage: 22. + p.power[1] as f32 * 6.,
                 hostile: false,
                 kind: 0,
+                from: None,
             });
             self.sounds.push(Sfx::Bolt);
         }
@@ -1034,6 +1135,7 @@ impl Game {
                 damage: 90. + p.power[1] as f32 * 12.,
                 hostile: false,
                 kind: 1,
+                from: None,
             });
         }
         if input.trap && p.trap_cd <= 0. {
@@ -1115,7 +1217,7 @@ impl Game {
             .iter()
             .any(|h| h.overlaps(&self.player.rect()))
         {
-            self.hurt(12., -self.player.face);
+            self.hurt(12., -self.player.face, Cause::Hazard);
         }
         if self.player.pos.y > self.level.max_y + 80. {
             self.player.pos = self.last_safe_pos;
@@ -1206,6 +1308,7 @@ impl Game {
                             damage: EnemyKind::Archer.hit_damage() * e.power,
                             hostile: true,
                             kind: 2,
+                            from: Some(EnemyKind::Archer),
                         }),
                         EnemyKind::Regent => {
                             e.phase += 1;
@@ -1218,6 +1321,7 @@ impl Game {
                                         damage: 19. * e.power,
                                         hostile: true,
                                         kind: 2,
+                                        from: Some(EnemyKind::Regent),
                                     });
                                 }
                             } else {
@@ -1286,7 +1390,7 @@ impl Game {
             if self.player.parry > 0. && self.player.face == -dir {
                 parries.push(i);
             } else {
-                self.hurt(damage, dir);
+                self.hurt(damage, dir, Cause::Strike(self.level.enemies[i].kind));
             }
         }
         for i in parries {
@@ -1345,7 +1449,7 @@ impl Game {
                         reflections.push((s.pos, s.vel.x.signum()));
                     } else {
                         s.life = 0.;
-                        damage.push((s.damage, s.vel.x.signum()));
+                        damage.push((s.damage, s.vel.x.signum(), s.from));
                     }
                 }
             } else {
@@ -1366,8 +1470,8 @@ impl Game {
         for (i, d, dir, heavy) in hits {
             self.hit(i, d, dir, false, heavy);
         }
-        for (d, dir) in damage {
-            self.hurt(d, dir);
+        for (d, dir, from) in damage {
+            self.hurt(d, dir, from.map_or(Cause::Hazard, Cause::Bolt));
         }
         for (pos, d) in blasts {
             self.effect(Effect::Explosion, pos, 0.);
@@ -1523,11 +1627,12 @@ impl Game {
                     }
                     self.save.wins += 1;
                     self.save.embers += self.player.embers;
+                    self.recap = Some(self.record_run(None, self.player.embers));
                     self.player.embers = 0;
-                    self.save.best_kills = self.save.best_kills.max(self.player.kills);
                     self.persist();
                     self.clear_checkpoint();
                     self.screen = Screen::Victory;
+                    self.result_time = 0.;
                 } else {
                     self.save.embers += self.player.embers;
                     self.player.embers = 0;
@@ -1847,6 +1952,7 @@ mod tests {
             damage: 5.,
             hostile: false,
             kind: 0,
+            from: None,
         });
         for _ in 0..8 {
             g.tick(STEP, Input::default());
@@ -1862,6 +1968,7 @@ mod tests {
             damage: 10.,
             hostile: true,
             kind: 2,
+            from: None,
         });
         g.tick(STEP, Input::default());
         assert!(g.particles.iter().any(|p| p.kind == particles::Kind::Flash));
@@ -1913,7 +2020,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        g.hurt(10., 1.);
+        g.hurt(10., 1., Cause::Hazard);
         for _ in 0..120 {
             g.tick(STEP, Input::default());
         }
@@ -1943,6 +2050,7 @@ mod tests {
             damage: 10.,
             hostile: true,
             kind: 2,
+            from: None,
         });
         g.tick(STEP, Input::default());
         assert!(!g.shots[0].hostile);
@@ -1967,6 +2075,7 @@ mod tests {
             damage: 20.,
             hostile: true,
             kind: 2,
+            from: None,
         });
         g.tick(
             STEP,
@@ -2005,14 +2114,14 @@ mod tests {
                 ..Default::default()
             },
         );
-        g.hurt(50., 1.);
+        g.hurt(50., 1., Cause::Hazard);
         assert_eq!(g.player.hp, 100.);
         for _ in 0..36 {
             g.tick(STEP, Input::default());
         }
         assert_eq!(g.player.dodge, 0.);
         assert!(g.player.dodge_cd > 0.);
-        g.hurt(20., 1.);
+        g.hurt(20., 1., Cause::Hazard);
         assert_eq!(g.player.hp, 80.);
     }
     #[test]
@@ -2145,6 +2254,7 @@ mod tests {
             damage: 13.,
             hostile: true,
             kind: 0,
+            from: None,
         });
         g.tick(STEP, Input::default());
         assert_eq!(g.hint.map(|h| h.0), Some(Hint::Parry));
@@ -2767,7 +2877,7 @@ mod tests {
         // Death.
         let mut g = reach_keeper();
         g.travel();
-        g.hurt(10_000., 1.);
+        g.hurt(10_000., 1., Cause::Hazard);
         assert_eq!(g.screen, Screen::Dead);
         assert!(stored_checkpoint().is_none());
         // Abandoning from the pause screen.
@@ -2803,12 +2913,164 @@ mod tests {
         assert_eq!(g.stage, 1);
         assert!(stored_checkpoint().is_none());
     }
+    /// Ticks until the hero is wounded and returns what was blamed.
+    fn first_wound(mut g: Game) -> Cause {
+        g.player.hp = 1000.;
+        g.player.max_hp = 1000.;
+        for _ in 0..360 {
+            g.tick(STEP, Input::default());
+            if g.player.hp < 1000. {
+                return g.cause;
+            }
+        }
+        panic!("nothing wounded the hero");
+    }
+    #[test]
+    fn each_damage_source_is_named_as_the_cause() {
+        let beside = |kind, phase| {
+            let mut g = game();
+            let mut e = Enemy::new(g.player.pos.x + 25., FLOOR, kind, Threat::BASE);
+            if kind == EnemyKind::Moth {
+                e.pos.y = g.player.pos.y - 14.;
+                e.home_y = e.pos.y + 14.;
+            }
+            e.windup = 0.001;
+            e.phase = phase;
+            g.level.enemies.push(e);
+            g
+        };
+        for kind in [EnemyKind::Warden, EnemyKind::Brute, EnemyKind::Moth] {
+            assert_eq!(first_wound(beside(kind, 0)), Cause::Strike(kind));
+        }
+        assert_eq!(
+            first_wound(beside(EnemyKind::Archer, 0)),
+            Cause::Bolt(EnemyKind::Archer)
+        );
+        assert_eq!(
+            first_wound(beside(EnemyKind::Regent, 0)),
+            Cause::Strike(EnemyKind::Regent)
+        );
+        // Every third Regent attack is a fan of bolts.
+        assert_eq!(
+            first_wound(beside(EnemyKind::Regent, 2)),
+            Cause::Bolt(EnemyKind::Regent)
+        );
+        let mut g = game();
+        g.level.hazards = vec![g.player.rect()];
+        assert_eq!(first_wound(g), Cause::Hazard);
+
+        let mut g = beside(EnemyKind::Brute, 0);
+        g.player.hp = 1.;
+        for _ in 0..360 {
+            g.tick(STEP, Input::default());
+        }
+        assert_eq!(g.screen, Screen::Dead);
+        let recap = g.recap.expect("death leaves a recap");
+        assert_eq!(recap.cause, Some(Cause::Strike(EnemyKind::Brute)));
+        assert_eq!((recap.biome, recap.stage), (Biome::Aqueduct, 0));
+        let mut g = game();
+        g.player.embers = 9;
+        g.screen = Screen::Paused;
+        g.request_abandon();
+        g.request_abandon();
+        let recap = g.recap.unwrap();
+        assert_eq!((recap.cause, recap.embers), (Some(Cause::Abandoned), 9));
+    }
+    #[test]
+    fn records_count_as_new_only_when_a_saved_one_is_beaten() {
+        let ended = |save: Save, kills: u32, stage: u32, win: Option<f32>| {
+            let mut g = Game::new(42, save);
+            g.start();
+            g.level.enemies.clear();
+            g.player.kills = kills;
+            if stage > 0 || win.is_some() {
+                g.stage = 1;
+                g.travel();
+                g.stage = stage.max(1);
+            }
+            if let Some(time) = win {
+                g.screen = Screen::Camp;
+                g.stage = 1;
+                g.travel();
+                g.level.enemies.clear();
+                g.run_time = time;
+                use_exit(&mut g);
+                assert_eq!(g.screen, Screen::Victory);
+            } else {
+                g.hurt(10_000., 1., Cause::Hazard);
+            }
+            g
+        };
+        // A save from before records were kept: nothing is marked new.
+        let old = Save {
+            best_kills: 0,
+            runs: 30,
+            ..Default::default()
+        };
+        let g = ended(old, 4, 1, None);
+        let r = g.recap.unwrap();
+        assert!(!r.new_kills && !r.new_stage && !r.new_time);
+        assert_eq!(
+            (g.save.best_kills, g.save.best_stage, g.save.best_time),
+            (4, Some(1), None)
+        );
+        // Beating saved records marks them; matching or falling short doesn't.
+        let kept = Save {
+            best_kills: 5,
+            best_stage: Some(0),
+            best_time: Some(600.),
+            ..Default::default()
+        };
+        let r = ended(kept.clone(), 7, 1, None).recap.unwrap();
+        assert!(r.new_kills && r.new_stage && !r.new_time);
+        let r = ended(kept.clone(), 5, 0, None).recap.unwrap();
+        assert!(!r.new_kills && !r.new_stage);
+        let g = ended(kept.clone(), 0, 2, Some(500.));
+        let r = g.recap.unwrap();
+        assert!(r.new_time && r.new_stage && r.cause.is_none());
+        // Using the gate takes one simulation step.
+        assert!(g.save.best_time.is_some_and(|t| (t - 500.).abs() < 0.1));
+        assert_eq!(g.save.best_stage, Some(2));
+        let g = ended(kept.clone(), 0, 2, Some(700.));
+        assert!(!g.recap.unwrap().new_time);
+        assert_eq!(
+            g.save.best_time,
+            Some(600.),
+            "a slower win keeps the record"
+        );
+        // The first victory sets the time without calling it a record.
+        let g = ended(Save::default(), 0, 2, Some(900.));
+        assert!(!g.recap.unwrap().new_time);
+        assert!(g.save.best_time.is_some_and(|t| (t - 900.).abs() < 0.1));
+        // Practice runs leave records alone.
+        let mut g = Game::new(42, kept.clone());
+        g.practice = true;
+        g.screen = Screen::Playing;
+        g.player.kills = 50;
+        g.hurt(10_000., 1., Cause::Hazard);
+        assert!(!g.recap.unwrap().new_kills);
+        assert_eq!(g.save.best_kills, 5);
+    }
+    #[test]
+    fn result_screens_accept_confirming_after_a_second() {
+        let mut g = game();
+        g.hurt(10_000., 1., Cause::Hazard);
+        assert!(!g.result_ready());
+        for _ in 0..115 {
+            g.tick(STEP, Input::default());
+        }
+        assert!(!g.result_ready());
+        for _ in 0..10 {
+            g.tick(STEP, Input::default());
+        }
+        assert!(g.result_ready());
+    }
     #[test]
     fn death_loses_unbanked_embers_only() {
         let mut g = game();
         g.save.embers = 30;
         g.player.embers = 12;
-        g.hurt(1000., 1.);
+        g.hurt(1000., 1., Cause::Hazard);
         assert_eq!(g.screen, Screen::Dead);
         assert_eq!(g.player.embers, 0);
         assert_eq!(g.save.embers, 30);
@@ -2942,6 +3204,7 @@ mod tests {
             damage: 5.,
             hostile: false,
             kind: 1,
+            from: None,
         });
         g.update_shots(0.05);
         assert_eq!(g.shots[0].pos.y, -54.);

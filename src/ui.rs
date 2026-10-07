@@ -116,14 +116,18 @@ impl Ui {
         );
         self.centered_at("Defy the Regent.", 354., 455., 18., c(PALE));
         let record = format!(
-            "{} {}   /   {} embers kept",
+            "{} {}   /   {} embers kept{}",
             g.save.runs,
             if g.save.runs == 1 {
                 "descent"
             } else {
                 "descents"
             },
-            g.save.embers
+            g.save.embers,
+            g.save.best_time.map_or(String::new(), |t| format!(
+                "   /   fastest win {}",
+                clock(t)
+            ))
         );
         let p = g.prompts();
         if let Some(run) = &g.resume {
@@ -566,12 +570,25 @@ impl Ui {
             ),
         ];
         for (i, (left, a, right, b)) in rows.iter().enumerate() {
-            let y = 246. + i as f32 * 34.;
+            let y = 240. + i as f32 * 31.;
             self.key(left, 311., y);
             self.text(a, 398., y + 18., 19., c(PALE));
             self.key(right, 664., y);
             self.text(b, 751., y + 18., 19., c(PALE));
         }
+        // The run's place and build, which play shows only in pieces.
+        let player = &g.player;
+        let mut status = format!(
+            "{}   /   STAGE {} OF 3   /   {} TIER {}",
+            g.level.biome.name(),
+            g.stage + 1,
+            player.weapon.name(),
+            player.tier
+        );
+        if let Some(mutation) = player.mutation_name() {
+            status += &format!("   /   {}", mutation.to_uppercase());
+        }
+        self.center(&status, 478., 13., c(TEAL));
         self.button(
             &format!("{}   Resume the descent", p.menu(Menu::Pause)),
             Rect::new(423., 493., 434., 57.),
@@ -978,12 +995,10 @@ impl Ui {
     }
     fn result(&self, g: &Game) {
         let win = g.screen == Screen::Victory;
-        self.skin.panel(Rect::new(227., 118., 826., 464.));
-        self.skin.icon(
-            if win { 13 } else { 8 },
-            Rect::new(599., 143., 82., 80.),
-            1.,
-        );
+        let p = &g.player;
+        self.skin.panel(Rect::new(207., 52., 866., 616.));
+        self.skin
+            .icon(if win { 13 } else { 8 }, Rect::new(604., 72., 72., 70.), 1.);
         self.heading(
             if win {
                 "The sun remembers"
@@ -991,45 +1006,141 @@ impl Ui {
                 "Ashes, again"
             },
             640.,
-            282.,
+            196.,
             48.,
         );
+        let recap = g.recap;
+        let stage = recap.map_or(g.stage, |r| r.stage);
+        let biome = recap.map_or(g.level.biome, |r| r.biome);
         self.center(
-            if win {
-                "The Brass Regent is silent. The Crown Rune is yours."
+            &if win {
+                "The Brass Regent is silent. The Crown Rune is yours.".to_string()
             } else {
-                "Your vessel is gone. Your banked memories remain."
+                let cause = recap
+                    .and_then(|r| r.cause)
+                    .map_or("Your vessel is gone", Cause::text);
+                format!("{cause} in {}.", biome.place())
             },
-            328.,
+            236.,
             20.,
             c(PALE),
         );
-        self.center(
-            &format!(
-                "{} guardians   /   {:02}:{:02} elapsed   /   {} banked embers",
-                g.player.kills,
-                g.run_time as u32 / 60,
-                g.run_time as u32 % 60,
-                g.save.embers
-            ),
-            378.,
-            19.,
-            c(TEAL),
+
+        // This run, on the left; the records it is measured against, on the right.
+        let left = Rect::new(247., 262., 386., 242.);
+        let right = Rect::new(647., 262., 386., 242.);
+        self.skin.panel(left);
+        self.skin.panel(right);
+        self.centered_at(
+            "THIS DESCENT",
+            left.x + left.w / 2.,
+            left.y + 30.,
+            13.,
+            c(MUTED),
         );
+        self.centered_at(
+            "RECORDS",
+            right.x + right.w / 2.,
+            right.y + 30.,
+            13.,
+            c(MUTED),
+        );
+        let embers = recap.map_or(0, |r| r.embers);
+        let rows: [(&str, String); 6] = [
+            ("Reached", format!("Stage {} of 3", stage + 1)),
+            (
+                "Weapon",
+                format!("{} / tier {}", title_case(p.weapon.name()), p.tier),
+            ),
+            ("Memories", String::new()),
+            ("Mutation", p.mutation_name().unwrap_or("None").to_string()),
+            (
+                "Felled",
+                format!("{} guardians in {}", p.kills, clock(g.run_time)),
+            ),
+            (
+                if win { "Banked" } else { "Lost" },
+                format!(
+                    "{embers} carried {}",
+                    if embers == 1 { "ember" } else { "embers" }
+                ),
+            ),
+        ];
+        for (i, (label, value)) in rows.iter().enumerate() {
+            let y = left.y + 62. + i as f32 * 29.;
+            self.text(label, left.x + 26., y, 15., c(MUTED));
+            self.text(value, left.x + 122., y, 17., c(PALE));
+        }
+        // Ferocity, Ingenuity, and Resolve, as the HUD shows them.
+        for (i, color) in [0xef9c81, 0x9ed7eb, 0xb4d89a].into_iter().enumerate() {
+            let x = left.x + 122. + i as f32 * 52.;
+            self.skin
+                .icon(10 + i, Rect::new(x, left.y + 106., 19., 20.), 1.);
+            self.text(
+                &p.power[i].to_string(),
+                x + 24.,
+                left.y + 120.,
+                17.,
+                c(color),
+            );
+        }
+        let s = &g.save;
+        let fresh = |new: bool| new.then_some("NEW");
+        let records: [(&str, String, Option<&str>); 5] = [
+            (
+                "Most felled",
+                format!("{} guardians", s.best_kills),
+                fresh(recap.is_some_and(|r| r.new_kills)),
+            ),
+            (
+                "Deepest",
+                s.best_stage.map_or("Stage 1 of 3".into(), |best| {
+                    format!("Stage {} of 3", best + 1)
+                }),
+                fresh(recap.is_some_and(|r| r.new_stage)),
+            ),
+            (
+                "Fastest win",
+                s.best_time.map_or("Not yet".into(), clock),
+                fresh(recap.is_some_and(|r| r.new_time)),
+            ),
+            ("Victories", s.wins.to_string(), None),
+            ("Embers kept", s.embers.to_string(), None),
+        ];
+        for (i, (label, value, new)) in records.iter().enumerate() {
+            let y = right.y + 62. + i as f32 * 29.;
+            self.text(label, right.x + 26., y, 15., c(MUTED));
+            self.text(value, right.x + 136., y, 17., c(PALE));
+            if let Some(new) = new {
+                self.text(new, right.x + 326., y, 14., c(GOLD));
+            }
+        }
+        if g.practice {
+            self.centered_at(
+                "Practice runs don't change records.",
+                right.x + right.w / 2.,
+                right.y + 226.,
+                13.,
+                c(MUTED),
+            );
+        }
         self.center(
             if win {
                 "The next descent awakens stronger guardians."
             } else {
-                "Unbanked embers were lost in the fire."
+                "Banked embers, upgrades, and the rune remain. Unbanked embers were lost."
             },
-            420.,
-            18.,
+            534.,
+            16.,
             c(MUTED),
         );
-        self.button(
-            &format!("{}   Rise again", g.prompts().menu(Menu::Confirm)),
-            Rect::new(443., 472., 394., 63.),
-        );
+        // The button appears once confirming is accepted.
+        if g.result_ready() {
+            self.button(
+                &format!("{}   Rise again", g.prompts().menu(Menu::Confirm)),
+                Rect::new(443., 572., 394., 63.),
+            );
+        }
     }
     fn map_point(g: &Game, rect: Rect, world: Vec2) -> Vec2 {
         let depth = (g.level.max_y - g.level.min_y).max(1.);
@@ -1168,4 +1279,21 @@ impl Ui {
         }
         draw_rectangle_lines(x, y, w, h, 1., c(0x436263));
     }
+}
+/// Minutes and seconds, as the HUD shows them.
+fn clock(seconds: f32) -> String {
+    let s = seconds.max(0.) as u32;
+    format!("{:02}:{:02}", s / 60, s % 60)
+}
+/// "FURNACE MAUL" as "Furnace Maul".
+fn title_case(name: &str) -> String {
+    name.split(' ')
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or(String::new(), |first| {
+                first.to_string() + &chars.as_str().to_lowercase()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }

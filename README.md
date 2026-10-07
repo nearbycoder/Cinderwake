@@ -125,7 +125,7 @@ flowchart LR
 3. **Choose your branch.** Take the Conservatory or the Foundry, then continue to the Crown.
 4. **Defeat the Regent.** The boss unlocks the Crown Rune; the final gate completes the run. A brute and an archer guard the gallery on the way to the Regent. Enemies grow tougher with each stage of a run, and later runs also scale enemy health with recorded victories.
 
-Death resets equipment, run stats, and carried embers. Banked embers, permanent upgrades, the Crown Rune, and victory counts survive. Closing the game partway through doesn't end the run once you've left the Aqueduct: arriving in each later biome and reaching the Keeper save it, and the title screen offers **Enter** to continue from that point or **N** for a new descent. Embers carried since the last bellgate are lost when you continue, as on death. Sealed caches open after eight guardian kills or with the rune on a later run.
+When a run ends, a recap names what ended it and where, shows the build you had, and compares the run with your records: most guardians felled, deepest stage, and fastest victory (the title screen shows that one too). Death resets equipment, run stats, and carried embers. Banked embers, permanent upgrades, the Crown Rune, and victory counts survive. Closing the game partway through doesn't end the run once you've left the Aqueduct: arriving in each later biome and reaching the Keeper save it, and the title screen offers **Enter** to continue from that point or **N** for a new descent. Embers carried since the last bellgate are lost when you continue, as on death. Sealed caches open after eight guardian kills or with the rune on a later run.
 
 Progress is stored in `progress.json` in your per-user data folder:
 

@@ -20,6 +20,15 @@ impl Biome {
             Self::Crown => "CROWN OF THE MACHINE",
         }
     }
+    /// The biome's name inside a sentence: "in the Ember Foundry".
+    pub fn place(self) -> &'static str {
+        match self {
+            Self::Aqueduct => "the Drowned Aqueduct",
+            Self::Garden => "the Glassroot Conservatory",
+            Self::Foundry => "the Ember Foundry",
+            Self::Crown => "the Crown of the Machine",
+        }
+    }
     pub fn subtitle(self) -> &'static str {
         match self {
             Self::Aqueduct => "Below the city, something still breathes.",

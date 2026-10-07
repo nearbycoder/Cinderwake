@@ -248,6 +248,7 @@ mod tests {
                 damage: 1.,
                 hostile: false,
                 kind: 0,
+                from: None,
             });
         }
         g.traps.push(crate::game::Trap {

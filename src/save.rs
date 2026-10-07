@@ -12,13 +12,25 @@ pub struct Save {
     pub wins: u32,
     pub runs: u32,
     pub best_kills: u32,
+    /// The furthest stage (0–2) any run has reached, and the fastest
+    /// victory in simulated seconds. Files from before these records lack
+    /// them, so a run can't be marked as beating a record nobody kept.
+    pub best_stage: Option<u32>,
+    pub best_time: Option<f32>,
 }
 impl Save {
     pub const FILE: &str = "progress.json";
     pub fn load() -> Self {
         crate::storage::read(Self::FILE)
-            .and_then(|s| serde_json::from_slice(&s).ok())
+            .and_then(|s| serde_json::from_slice::<Self>(&s).ok())
             .unwrap_or_default()
+            .sanitized()
+    }
+    /// Drops records no run could have set.
+    fn sanitized(mut self) -> Self {
+        self.best_stage = self.best_stage.map(|stage| stage.min(2));
+        self.best_time = self.best_time.filter(|t| t.is_finite() && *t > 0.);
+        self
     }
     pub fn store(&self) -> io::Result<()> {
         crate::storage::write(Self::FILE, &serde_json::to_vec_pretty(self)?)
@@ -83,6 +95,14 @@ mod tests {
         assert!(r.rune);
         let old: Save = serde_json::from_str("{\"embers\":9}").unwrap();
         assert_eq!(old.flask, 0);
+        assert_eq!(
+            (old.best_stage, old.best_time),
+            (None, None),
+            "no records yet"
+        );
+        let odd: Save = serde_json::from_str("{\"best_stage\":9,\"best_time\":-4}").unwrap();
+        let odd = odd.sanitized();
+        assert_eq!((odd.best_stage, odd.best_time), (Some(2), None));
         assert!(serde_json::from_str::<Save>("broken").is_err());
     }
     #[test]

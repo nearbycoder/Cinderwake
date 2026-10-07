@@ -128,8 +128,13 @@ fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
                 g.start();
             }
         }
-        Screen::Title | Screen::Dead | Screen::Victory => {
+        Screen::Title => {
             if confirm || pad.pressed(Button::Start) {
+                g.start();
+            }
+        }
+        Screen::Dead | Screen::Victory => {
+            if g.result_ready() && (confirm || pad.pressed(Button::Start)) {
                 g.start();
             }
         }
@@ -300,7 +305,10 @@ fn ui_fixture(index: usize) -> Game {
     g.intro = 0.;
     g.settings.muted = true;
     match index {
-        0 => g.screen = Screen::Title,
+        0 => {
+            g.screen = Screen::Title;
+            g.save.best_time = Some(1123.);
+        }
         1 => {}
         2 => {
             g.player.hp = 19.;
@@ -327,15 +335,52 @@ fn ui_fixture(index: usize) -> Game {
                 g.notice_time = 4.;
             }
         }
+        // Result screens show the records as normal play keeps them.
         8 => {
+            g.practice = false;
             g.screen = Screen::Dead;
+            g.stage = 1;
+            g.level = world::Level::generate(4017, world::Biome::Foundry, world::Threat::BASE);
             g.player.hp = 0.;
+            g.player.weapon = Weapon::Glaive;
+            g.player.mutation = 1;
+            g.save.best_stage = Some(1);
+            g.result_time = game::RESULT_DELAY;
+            g.recap = Some(game::Recap {
+                cause: Some(game::Cause::Strike(world::EnemyKind::Brute)),
+                biome: world::Biome::Foundry,
+                stage: 1,
+                embers: 18,
+                new_kills: false,
+                new_stage: false,
+                new_time: false,
+            });
         }
         9 => {
+            g.practice = false;
             g.screen = Screen::Victory;
+            g.stage = 2;
+            g.level = world::Level::generate(4017, world::Biome::Crown, world::Threat::BASE);
             g.player.kills = 38;
+            g.player.tier = 7;
+            g.player.power = [4, 2, 3];
+            g.player.weapon = Weapon::Hammer;
+            g.player.mutation = 2;
+            g.run_time = 1123.;
             g.save.rune = true;
             g.save.wins = 1;
+            g.save.best_stage = Some(2);
+            g.save.best_time = Some(1123.);
+            g.result_time = game::RESULT_DELAY;
+            g.recap = Some(game::Recap {
+                cause: None,
+                biome: world::Biome::Crown,
+                stage: 2,
+                embers: 41,
+                new_kills: true,
+                new_stage: true,
+                new_time: true,
+            });
         }
         10 => {
             g.level = world::Level::generate(4017, world::Biome::Crown, world::Threat::BASE);
@@ -1057,6 +1102,9 @@ mod capture_tests {
         assert!(g.abandon_armed && g.screen == Screen::Paused);
         press(&mut g, &[West]);
         assert_eq!(g.screen, Screen::Dead);
+        press(&mut g, &[South]);
+        assert_eq!(g.screen, Screen::Dead, "the recap holds for a second");
+        g.result_time = game::RESULT_DELAY;
         press(&mut g, &[South]);
         assert_eq!(g.screen, Screen::Playing);
         g.screen = Screen::Scroll;

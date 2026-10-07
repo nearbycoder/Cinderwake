@@ -90,7 +90,7 @@ Linux    $XDG_DATA_HOME/cinderwake/   (falls back to ~/.local/share/cinderwake/)
 Windows  %APPDATA%\Cinderwake\
 ```
 
-The schema uses defaults for missing fields. Saving writes a temporary JSON file and renames it over the prior file; unreadable or invalid saves currently fall back to default progress. To reset a save, move the file aside before launching.
+The schema uses defaults for missing fields. Three personal records live there too: `best_kills`, and since round 5 `best_stage` (the furthest stage reached, 0–2) and `best_time` (the fastest victory, in simulated seconds). Files from before round 5 lack the last two, so the first run afterwards records them without calling them new; a recap marks a record as new only when it beats one already saved, and practice runs never change records. Saving writes a temporary JSON file and renames it over the prior file; unreadable or invalid saves currently fall back to default progress. To reset a save, move the file aside before launching.
 
 A run in progress is saved as `run.json` in the same folder (`cinderwake/run.json` in browser storage) by `save::Checkpoint`. It holds the run's seed, stage, biome, weapon, tier, memories, copper, mutation, maximum vitality, kills, and time, and whether it was saved at the Keeper. It's written on arrival in each biome, on reaching the Keeper, and after each Keeper purchase. It's deleted on death, abandoning, victory, and starting a new descent. If one exists at launch, the title offers **Enter** to continue and **N** to start again. Continuing regenerates the same level from the seed and stage and restores the build at full vitality and flasks, at the biome's start or on the Keeper screen. Embers carried since the last bellgate were never banked, so they're lost, as on death, and continuing doesn't count as a new descent. Quitting and continuing does restart the current biome from its entrance with the build you arrived with, so it can undo a bad fight; that is the usual trade-off for a save-on-arrival roguelite. A checkpoint that fails to parse, or names a stage and biome no run can reach, is ignored. Unit tests cover the round trip, every deletion path, practice isolation, and damaged files. In the browser build, with real key presses, an injected Keeper checkpoint continued to the Keeper, travelling saved the Foundry arrival, a reload offered and restored it, abandoning deleted it, and **N** replaced it.
 
@@ -132,6 +132,8 @@ The HUD is drawn after the world effects. Shader compilation failure falls back 
 ### Interface and sound
 
 Generated frame, icon, and crest atlases provide nine-slice panels, gauges, equipment slots, and plaques around live game state. The UI covers title, combat HUD, map, low health, cooldowns, pause, memory selection, reliquary choices, Keeper purchases/routes, death, victory, and boss health.
+
+The death and victory screens show a recap (`game::Recap`): what ended the run (`game::Cause`, recorded by `Game::hurt` from the guardian's strike or bolt, the spikes, or abandoning), the biome and stage, the weapon and tier, the memories and mutation, the embers lost or banked, and the records, with any this run beat marked **NEW**. For their first second (`RESULT_DELAY`) they ignore **Enter** and **A** and hide the button, so a button held or mashed as the hero falls doesn't skip into a new run. In headless Chrome, two **Enter** presses within 523 ms of abandoning were ignored, and a later press started a new run. The pause screen adds one line with the biome, stage, weapon, tier, and mutation.
 
 Original synthesized music and sixteen effects are embedded with the artwork, font, and shaders. Regenerate audio with `python3 scripts/synthesize.py`. The soundtrack is a prototype soundscape, not a finished production score.
 
@@ -221,7 +223,7 @@ Run capture commands from the repository root. Outputs are written beneath `capt
 | `--demo` | Continuous scripted practice play | Runs until closed |
 | `--gallery` | Four staged biome views | `captures/biome-0.png` through `biome-3.png` |
 | `--sprite-preview` | Eight hero animation panels | `captures/animation-preview.png` |
-| `--ui-gallery` | Twenty-four frozen, fixed-seed interface fixtures, including the options and controls pages, abandon confirmation, a tip banner, a reliquary choice, the atlas fog, a HUD with rebound keys, the title with a run to continue, and the HUD, title, Keeper, and memory choice with controller prompts, and the quit warning | `captures/ui-*.png` |
+| `--ui-gallery` | Twenty-four frozen, fixed-seed interface fixtures, including the death and victory recaps, the options and controls pages, abandon confirmation, a tip banner, a reliquary choice, the atlas fog, a HUD with rebound keys, the title with a run to continue, and the HUD, title, Keeper, and memory choice with controller prompts, and the quit warning | `captures/ui-*.png` |
 | `--environment-tour` | 24 seconds of camera traversal across all four biomes | 480 PNGs at 20 fps in `captures/tour/` |
 | `--motion-capture` | 15 seconds of scripted input with live physics and combat | 300 PNGs at 20 fps in `captures/motion/` |
 | `--vertical-capture` | A complete fixed-seed Aqueduct route through all elevations | 20 PNGs per simulated second in `captures/vertical/`; about 25 seconds |
