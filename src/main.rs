@@ -79,6 +79,8 @@ struct MenuKeys<'a> {
     last: Option<KeyCode>,
     /// A left click this frame, in interface coordinates.
     click: Option<Vec2>,
+    /// Where the mouse moved to this frame, if it moved.
+    hover: Option<Vec2>,
 }
 /// A window point in interface coordinates (1280 × 720), given the
 /// letterboxed frame in the same logical units as the mouse.
@@ -229,6 +231,13 @@ fn options_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
         g.close_options();
         return;
     }
+    // Pointing at a row selects it, so its help line shows. Only a moving
+    // mouse does this, so a still cursor never fights the keyboard.
+    if let Some(Click::Row(row) | Click::Level(row, _) | Click::Step(row, _)) =
+        keys.hover.and_then(|at| ui::click_at(g, at))
+    {
+        g.options_row = row;
+    }
     let before = g.settings.clone();
     match clicked {
         Some(Click::Row(row)) => {
@@ -303,7 +312,7 @@ fn controls_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
         return;
     }
     let rows = controls::Action::ALL.len() + 1;
-    if let Some(ui::Click::Row(row)) = clicked {
+    if let Some(ui::Click::Row(row)) = clicked.or(keys.hover.and_then(|at| ui::click_at(g, at))) {
         g.controls_row = row;
     }
     if pressed(&[KeyCode::W, KeyCode::Up]) || pad.nav(Dir::Up) {
@@ -322,6 +331,45 @@ fn controls_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
             g.rebinding = true;
             g.controls_note = None;
         }
+    }
+}
+
+/// What each input device did this frame.
+#[derive(Default)]
+struct Devices {
+    pad: bool,
+    typed: bool,
+    clicked: bool,
+    moved: bool,
+}
+/// Prompts follow whichever device was used last, and the pointer's
+/// highlight lasts from the mouse moving or clicking until a key or a
+/// controller is used.
+fn follow_devices(g: &mut Game, used: Devices, mouse: Vec2) {
+    if used.pad {
+        g.pad_prompts = true;
+        g.pointer = None;
+    } else if used.typed || used.clicked {
+        g.pad_prompts = false;
+    }
+    if used.typed {
+        g.pointer = None;
+    }
+    if used.moved || used.clicked {
+        g.pointer = Some(mouse);
+    }
+}
+/// The mouse cursor the window shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Cursor {
+    Default,
+    /// A hand over anything a click would choose.
+    Pointer,
+}
+fn cursor_for(g: &Game) -> Cursor {
+    match g.pointer.and_then(|at| ui::click_at(g, at)) {
+        Some(_) => Cursor::Pointer,
+        None => Cursor::Default,
     }
 }
 
@@ -362,7 +410,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 27] = [
+const UI_GALLERY_NAMES: [&str; 31] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -390,6 +438,10 @@ const UI_GALLERY_NAMES: [&str; 27] = [
     "ui-24-title-unreadable-save",
     "ui-25-attack-warnings",
     "ui-26-paused-controller-lost",
+    "ui-27-hover-title-button",
+    "ui-28-hover-reliquary-card",
+    "ui-29-hover-options-arrow",
+    "ui-30-hover-title-confirm-quit",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -621,6 +673,30 @@ fn ui_fixture(index: usize) -> Game {
             g.offer = Some(Weapon::Hammer);
             g.player.tier = 3;
         }
+        // The mouse pointing at a button, a card, an options arrow, and the
+        // title's quit link after a first click.
+        27 => {
+            g.screen = Screen::Title;
+            g.pointer = Some(vec2(354., 515.));
+        }
+        28 => {
+            g.screen = Screen::Reliquary;
+            g.offer = Some(Weapon::Hammer);
+            g.player.tier = 3;
+            g.pointer = Some(vec2(455., 440.));
+        }
+        29 => {
+            g.screen = Screen::Paused;
+            g.open_options();
+            g.options_row = 2;
+            g.settings.shake = 4;
+            g.pointer = Some(vec2(893., 289.));
+        }
+        30 => {
+            g.screen = Screen::Title;
+            g.request_quit();
+            g.pointer = Some(vec2(494., 639.));
+        }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
     g
@@ -797,6 +873,8 @@ async fn main() {
     }
     let mut pad = pad::Pad::new();
     let mut mouse_held_over = false;
+    let mut last_mouse = Vec2::ZERO;
+    let mut shown_cursor = Cursor::Default;
     let focus_events = macroquad::input::utils::register_input_subscriber();
     let mut focused = true;
     let mut previous_level = (g.level.seed, g.level.biome, g.seed);
@@ -848,24 +926,38 @@ async fn main() {
         }
         let screen_before_menus = g.screen;
         if !staged && !automated {
-            // Prompts follow whichever device was used last.
-            if pad.touched() {
-                g.pad_prompts = true;
-            } else if !get_keys_pressed().is_empty()
-                || is_mouse_button_pressed(MouseButton::Left)
-                || is_mouse_button_pressed(MouseButton::Right)
-            {
-                g.pad_prompts = false;
-            }
-            let pressed = |k| is_key_pressed(k);
             let (frame, _) = letterbox(screen_width(), screen_height(), screen_dpi_scale());
+            let mouse = to_interface(frame, mouse_position().into());
+            let clicked = is_mouse_button_pressed(MouseButton::Left);
+            let moved = mouse.distance(last_mouse) > 0.5;
+            last_mouse = mouse;
+            follow_devices(
+                &mut g,
+                Devices {
+                    pad: pad.touched(),
+                    typed: !get_keys_pressed().is_empty(),
+                    clicked: clicked || is_mouse_button_pressed(MouseButton::Right),
+                    moved,
+                },
+                mouse,
+            );
+            let pressed = |k| is_key_pressed(k);
             let keys = MenuKeys {
                 pressed: &pressed,
                 last: get_last_key_pressed(),
-                click: is_mouse_button_pressed(MouseButton::Left)
-                    .then(|| to_interface(frame, mouse_position().into())),
+                click: clicked.then_some(mouse),
+                hover: moved.then_some(mouse),
             };
             menus(&mut g, &keys, &pad);
+            let cursor = cursor_for(&g);
+            if cursor != shown_cursor {
+                shown_cursor = cursor;
+                miniquad::window::set_mouse_cursor(if cursor == Cursor::Pointer {
+                    miniquad::CursorIcon::Pointer
+                } else {
+                    miniquad::CursorIcon::Default
+                });
+            }
             if g.screen != screen_before_menus {
                 g.quit_armed = false;
             }
@@ -1300,6 +1392,7 @@ mod capture_tests {
             pressed: &none,
             last: None,
             click: None,
+            hover: None,
         };
         let mut pad = pad::Pad::new();
         // One frame with the buttons down, then one with them released.
@@ -1382,6 +1475,7 @@ mod capture_tests {
                 pressed: &none,
                 last: None,
                 click: Some(vec2(x, y)),
+                hover: None,
             };
             menus(g, &keys, &pad);
         };
@@ -1462,6 +1556,7 @@ mod capture_tests {
                 pressed: if last.is_some() { &pressed } else { &none },
                 last,
                 click: Some(point).filter(|_| last.is_none()),
+                hover: None,
             };
             menus(g, &keys, &pad);
         };
@@ -1523,6 +1618,7 @@ mod capture_tests {
                 pressed: &none,
                 last: None,
                 click: Some(centre(g, target)),
+                hover: None,
             };
             menus(g, &keys, &pad);
         };
@@ -1565,6 +1661,78 @@ mod capture_tests {
         g.screen = Screen::Paused;
         g.pad_prompts = true;
         assert!(!has(&g, Mute) && has(&g, Abandon));
+    }
+
+    #[test]
+    fn the_pointer_highlights_until_a_key_or_controller_is_used() {
+        let mut g = Game::new(4017, save::Save::default());
+        let button = centre(&g, ui::Click::Confirm);
+        assert_eq!(cursor_for(&g), Cursor::Default, "no pointer yet");
+        let moved = Devices {
+            moved: true,
+            ..Default::default()
+        };
+        follow_devices(&mut g, moved, button);
+        assert_eq!(g.pointer, Some(button));
+        assert_eq!(cursor_for(&g), Cursor::Pointer, "a hand over the button");
+        follow_devices(&mut g, Devices::default(), vec2(900., 300.));
+        assert_eq!(g.pointer, Some(button), "a still mouse keeps its place");
+        let typed = Devices {
+            typed: true,
+            ..Default::default()
+        };
+        follow_devices(&mut g, typed, button);
+        assert_eq!((g.pointer, cursor_for(&g)), (None, Cursor::Default));
+        let moved = Devices {
+            moved: true,
+            ..Default::default()
+        };
+        follow_devices(&mut g, moved, vec2(900., 300.));
+        assert_eq!(cursor_for(&g), Cursor::Default, "nothing to click there");
+        let pad = Devices {
+            pad: true,
+            ..Default::default()
+        };
+        follow_devices(&mut g, pad, button);
+        assert!(g.pointer.is_none() && g.pad_prompts);
+    }
+
+    #[test]
+    fn pointing_at_a_row_selects_it_only_while_the_mouse_moves() {
+        let none = |_: KeyCode| false;
+        let pad = pad::Pad::new();
+        let mut g = Game::new(4017, save::Save::default());
+        g.open_options();
+        let hover = |g: &mut Game, at: Option<Vec2>| {
+            let keys = MenuKeys {
+                pressed: &none,
+                last: None,
+                click: None,
+                hover: at,
+            };
+            menus(g, &keys, &pad);
+        };
+        let row = centre(&g, ui::Click::Row(5));
+        hover(&mut g, Some(row));
+        assert_eq!(g.options_row, 5);
+        g.options_row = 1;
+        hover(&mut g, None);
+        assert_eq!(
+            g.options_row, 1,
+            "a still pointer leaves the keyboard's row"
+        );
+        let bar = centre(&g, ui::Click::Level(8, 4));
+        hover(&mut g, Some(bar));
+        assert_eq!(g.options_row, 8, "pointing at a bar selects its row");
+        assert_eq!(g.settings.speed, 10, "without changing it");
+        g.open_controls();
+        let action = centre(&g, ui::Click::Row(7));
+        hover(&mut g, Some(action));
+        assert_eq!(g.controls_row, 7);
+        g.rebinding = true;
+        let other = centre(&g, ui::Click::Row(3));
+        hover(&mut g, Some(other));
+        assert_eq!(g.controls_row, 7, "listening for a key holds the row");
     }
 
     #[test]

@@ -595,6 +595,31 @@ impl Ui {
         self.skin.crest(Rect::new(605., rect.y + 18., 70., 50.));
         self.heading(heading, 640., y, 37.);
     }
+    /// Highlights the target under the mouse pointer, using the same
+    /// rectangle a click would.
+    fn hover(&self, g: &Game) {
+        let Some((rect, click)) = g
+            .pointer
+            .and_then(|at| targets(g).into_iter().find(|(r, _)| r.contains(at)))
+        else {
+            return;
+        };
+        let glow = c(TEAL).with_alpha(0.14);
+        match click {
+            // Plaques: a glow between the frame's end caps.
+            Click::Confirm | Click::Resume | Click::Back => draw_rectangle(
+                rect.x + rect.h,
+                rect.y + 9.,
+                rect.w - rect.h * 2.,
+                rect.h - 18.,
+                glow,
+            ),
+            _ => {
+                draw_rectangle(rect.x, rect.y, rect.w, rect.h, glow);
+                draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 2., c(TEAL).with_alpha(0.6));
+            }
+        }
+    }
     pub fn draw(&self, g: &Game) {
         let over_title = matches!(g.screen, Screen::Options | Screen::Controls)
             && g.options_from == Screen::Title;
@@ -608,6 +633,7 @@ impl Ui {
                     self.options(g);
                 }
             }
+            self.hover(g);
             return;
         }
         self.hud(g);
@@ -750,6 +776,7 @@ impl Ui {
                 _ => {}
             }
         }
+        self.hover(g);
         if let Some(e) = &g.save_error {
             self.text(&format!("SAVE FAILED: {e}"), 20., 632., 13., RED);
         }

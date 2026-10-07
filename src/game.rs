@@ -429,6 +429,9 @@ pub struct Game {
     pub practice: bool,
     /// Prompts name controller buttons while a controller was used last.
     pub pad_prompts: bool,
+    /// Where the mouse points, in interface coordinates, while it was the
+    /// last thing used. Menus highlight the target under it.
+    pub pointer: Option<Vec2>,
     /// The run paused because a controller was removed; shown until a
     /// controller returns or play resumes.
     pub pad_lost: bool,
@@ -555,6 +558,7 @@ impl Game {
             quit_armed: false,
             quit: false,
             pad_prompts: false,
+            pointer: None,
             pad_lost: false,
             teach: false,
             hint: None,
