@@ -190,7 +190,7 @@ Cinderwake uses a **custom game framework on Macroquad**. Rust owns the fixed-st
 
 | System | Approach |
 | --- | --- |
-| Simulation | 120 Hz fixed step; seeded generation; presentation separated from gameplay randomness |
+| Simulation | 120 Hz fixed step, drawn between steps so motion stays even at any refresh rate; seeded generation; presentation separated from gameplay randomness |
 | World | Authored three-tier routes; one-way platforms; two-dimensional camera; route and support validation |
 | Animation | 32 selected hero frames, 32 guardian frames, and eight Regent frames; movement-driven strides and simulation-timed actions |
 | Particles | A bounded pool of 512 particles; sparks, debris, smoke, dust, motes, shockwaves, and flashes |

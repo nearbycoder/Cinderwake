@@ -107,6 +107,14 @@ Earlier builds used the macOS path on every platform. If no save exists at the n
 
 The world uses 640 × 360 logical coordinates and is rendered into a 1280 × 720 target before nearest-neighbor scaling and letterboxing. Animation and effects retain discrete pixel detail while physics runs at 120 Hz.
 
+### Drawing between steps
+
+The simulation always advances in whole 120 Hz steps, but displays refresh at their own rates and frames never arrive exactly on time, so a frame usually falls between two steps. Until round 9 each frame drew the latest step, so at 144 or 165 Hz some frames repeated the one before while others moved a full step, and even at 60 or 120 Hz a frame arriving a fraction of a millisecond early or late did the same. Now, during play, [`src/blend.rs`](../src/blend.rs) records where the camera, the hero, guardians, and bolts were before each step (`Pose::record`), and the frame is drawn the leftover fraction of the way from there to where they are now (`Pose::show`, with `leftover` = time left over ÷ step). The real positions are put back as soon as the frame (world, lighting, and HUD) is drawn (`Pose::restore`), so the simulation, its inputs, and its outcomes never see a blended value. The view therefore lags the newest step by at most one step, 8.3 ms. Anything that moved more than 24 units in one step (travel, the updraft back to a safe ledge, a new level) is drawn where it landed. When a bolt is fired or ends during a step, the bolt list no longer lines up with the one recorded, so each bolt is drawn back along its velocity instead. Particles, floating numbers, and animation frames still advance with whole steps. Menus, staged views, the demo, and capture modes draw whole steps as before, so their output is unchanged.
+
+Tests in `blend.rs` run a hero at full speed through the main loop's stepping at 60, 120 (with a ±0.5 ms wobble), 144, and 165 Hz: with blending, the drawn speed varies from frame to frame by less than 0.01%, and without it, some frames don't move at all. Other tests check that a teleport isn't blended, how a newly fired bolt is drawn, and that a 144 Hz run among the opening's guardians, blended every frame, ends in exactly the same state as one that isn't. Compared with a build of `main`, all 35 `--ui-gallery` fixtures and the 300 `--motion-capture` frames matched within the captures' own run-to-run variation (two runs of `main` differ the same way).
+
+`--pacing-check` measures the problem on real hardware: it starts a practice run with nothing hostile, records 8 seconds of real frame times after a second's warm-up, prints how many whole steps each frame ran, how many frames repeated or skipped a step relative to the usual count, and how much the moment a frame shows wobbles when only whole steps are drawn, then exits. With blending, that wobble is zero by design, since each frame is drawn at its own moment less one step.
+
 The letterboxed frame is computed in logical window units, while the HUD camera's viewport is converted to physical framebuffer pixels with the display scale factor. This keeps the HUD and menus aligned with the world on fractional (for example 1.25×) and Retina-style displays; it was verified at 1.25× on Linux, including a non-16:9 window.
 
 ### Characters
@@ -244,6 +252,7 @@ Run capture commands from the repository root. Outputs are written beneath `capt
 | `--environment-tour` | 24 seconds of camera traversal across all four biomes | 480 PNGs at 20 fps in `captures/tour/` |
 | `--motion-capture` | 15 seconds of scripted input with live physics and combat | 300 PNGs at 20 fps in `captures/motion/` |
 | `--vertical-capture` | A complete fixed-seed Aqueduct route through all elevations | 20 PNGs per simulated second in `captures/vertical/`; about 25 seconds |
+| `--pacing-check` | Eight seconds of a practice run at real frame times, nothing hostile | A one-line report of frame intervals, whole steps per frame, and how unevenly they fall (see [drawing between steps](#drawing-between-steps)) |
 
 Examples:
 

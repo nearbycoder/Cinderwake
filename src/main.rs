@@ -2,6 +2,7 @@ mod animation;
 mod art;
 mod atlas;
 mod audio;
+mod blend;
 mod controls;
 mod environment;
 mod game;
@@ -22,7 +23,7 @@ mod world;
 use game::*;
 use macroquad::prelude::*;
 /// Launch flags that keep the run apart from saved progress and settings.
-const ISOLATING_FLAGS: [&str; 9] = [
+const ISOLATING_FLAGS: [&str; 10] = [
     "--capture",
     "--gallery",
     "--sprite-preview",
@@ -32,6 +33,7 @@ const ISOLATING_FLAGS: [&str; 9] = [
     "--vertical-capture",
     "--demo",
     "--start-at",
+    "--pacing-check",
 ];
 fn isolated(args: &[String]) -> bool {
     args.iter().any(|a| ISOLATING_FLAGS.contains(&a.as_str()))
@@ -946,6 +948,8 @@ async fn main() {
     let automated = capture || motion_capture || vertical_capture;
     let no_postfx = args.iter().any(|s| s == "--no-postfx");
     let profile_render = args.iter().any(|s| s == "--profile-render");
+    // Testing aid: measures how whole steps fall across real frames here.
+    let pacing_check = args.iter().any(|s| s == "--pacing-check");
     let demo = args.iter().any(|s| s == "--demo") || automated;
     let staged = ui_gallery || gallery || environment_tour;
     // Testing aid: saves the frame every so many seconds of real time, so
@@ -998,6 +1002,12 @@ async fn main() {
         g.intro = 0.;
         g.notice_time = 0.;
     }
+    if pacing_check {
+        // Nothing should end the run while frame times are measured.
+        g.level.enemies.clear();
+        g.level.hazards.clear();
+        g.intro = 0.;
+    }
     if vertical_capture {
         // Navigation proof: authored geometry and live input/physics, with combat
         // removed so the entire route can be inspected without a scripted fight.
@@ -1015,6 +1025,12 @@ async fn main() {
     let target = render_target(1280, 720);
     target.texture.set_filter(FilterMode::Nearest);
     let mut accumulator = 0.;
+    // Play is drawn between the last two steps; menus, staged views, and
+    // scripted captures draw whole steps, so their output doesn't change.
+    let blending = !staged && !demo && !sprite_preview;
+    let mut pose = blend::Pose::default();
+    let mut pacing = blend::Pacing::default();
+    let mut pacing_warmup = 1.0_f32;
     let mut pending = Input::default();
     let mut frame = 0u32;
     // Browsers only allow fullscreen after a key press, so only desktop
@@ -1255,10 +1271,13 @@ async fn main() {
             sim_seconds(&g, frame_dt, demo || environment_tour)
         };
         let mut animation_dt = 0.;
+        let mut steps = 0;
         while accumulator >= world::STEP {
             let animate_step =
                 g.screen == Screen::Title || (g.screen == Screen::Playing && g.hitstop <= 0.);
+            pose.record(&g);
             g.tick(world::STEP, input);
+            steps += 1;
             if animate_step {
                 animation_dt += world::STEP;
             }
@@ -1276,6 +1295,17 @@ async fn main() {
         } else {
             input
         };
+        if pacing_check {
+            if pacing_warmup > 0. {
+                pacing_warmup -= frame_dt;
+            } else {
+                pacing.push(frame_dt, steps);
+            }
+            if pacing.seconds() >= 8. {
+                println!("pacing {}", pacing.report());
+                break;
+            }
+        }
         let silent = automated || staged || sprite_preview;
         let score = audio::Track::for_game(&g);
         audio.update(
@@ -1305,6 +1335,9 @@ async fn main() {
         if !paused {
             arrival = (arrival - frame_dt).max(0.);
         }
+        // Drawn partway into the next step; put back once the frame is drawn.
+        let shown = (blending && g.screen == Screen::Playing)
+            .then(|| pose.show(&mut g, blend::leftover(accumulator)));
         let mut camera = Camera2D::from_display_rect(Rect::new(0., 0., 640., 360.));
         camera.render_target = Some(target.clone());
         camera.target += camera_shake(&g);
@@ -1358,6 +1391,12 @@ async fn main() {
         set_camera(&ui_cam);
         if !sprite_preview || ui_gallery {
             ui.draw(&g);
+        }
+        if let Some(now) = shown {
+            now.restore(&mut g);
+        } else {
+            // Nothing to draw between, so the next frame starts from here.
+            pose.record(&g);
         }
         if environment_tour && !ui_gallery {
             draw_text(
