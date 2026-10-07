@@ -216,3 +216,35 @@ Findings for a later round:
 - A `--start-at` run doesn't save, so anything that depends on saving still needs injected browser storage to test.
 
 Still deferred: new content (14) and a smaller web download (15). Shrinking the art is an owner decision, and the new audio made the download 3.7 MB larger. Gamepad support, web hosting, licenses, and guardian health remain owner decisions.
+
+## Round 4 scope
+
+Four items. Gamepad support (item 9) has been waiting since round 1 because no controller is attached to this machine. It can now be checked with more than unit tests: the kernel's `uinput` interface is writable here, so a test script can create a virtual controller that the game reads through the same path as a real one, and the browser build can be given a scripted controller through the Gamepad API. That isn't the same as a person holding a pad, and the report will say so. The two gamepad items come first because they are the largest; the smaller items follow. Each item gets the usual checks: `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, `cargo test --locked`, the capture modes, and screenshots in [`media/improvements/round4/`](media/improvements/round4/). Every native run uses a temporary `XDG_DATA_HOME`, and the real save folder is checked before and after.
+
+### A. Play with a gamepad (item 9)
+
+A fixed layout in the Xbox naming most pads use: left stick or D-pad to move and drop, **A** jump, **X** strike, **B** dodge, **Y** interact, **RB** parry, **RT** glassbolt, **LB** fire vessel, **LT** arc snare, **D-pad up** flask, **Start** pause, **View/Select** atlas.
+
+- **Acceptance:** on the desktop (through `gilrs`), every gameplay action works from a controller, alongside the keyboard and mouse. The stick has a dead zone. Plugging a controller in or out mid-game is handled, and if the platform's controller support can't start, the game still runs on the keyboard. The browser build reads the same layout through the Gamepad API. A button pressed to leave a menu doesn't also act in the game. The README's controls table lists the layout, and the Linux build notes name the one new system library (`libudev`).
+- **Verify:** unit tests for the mapping, the dead zone, and combining pad and keyboard input; natively, a virtual controller created through `uinput` drives the release binary (move, jump, strike, dodge, a tool) with screenshots; in headless Chrome, a scripted controller does the same. No physical controller will be tested.
+
+### B. Menus and on-screen prompts for the gamepad
+
+- **Acceptance:** every screen can be used with only a controller: title (begin, continue, new descent, options), pause (resume, options, abandon twice), options and the controls page (navigate, change, back), memories, reliquaries, and the Keeper (purchases, route, travel), death, and victory. Choices numbered **1 / 2 / 3** map to **X / Y / B**, which sit left, top, and right on the pad, matching the cards. The HUD badges, title line, pause list, tips, and menu buttons show pad buttons after the controller was last used and keys after the keyboard was, switching back and forth. The controls page shows the fixed pad layout next to the rebindable keys.
+- **Verify:** unit tests for the menu mapping and prompt switching; `--ui-gallery` fixtures for the HUD, title, and a choice screen with pad prompts; the virtual controller in the native build and the scripted one in the browser go from the title through a run to the pause screen and options and back.
+
+### C. Pause when the game loses focus
+
+At the moment, switching to another window or browser tab leaves the run playing, so guardians keep attacking an unattended hero.
+
+- **Acceptance:** losing window focus (on X11 and XWayland) or hiding the browser tab during play opens the pause screen. Other screens are unaffected, and capture and test modes never pause themselves. The platform's own focus events are used; macOS and native Wayland windows may report only minimising, which the docs will say.
+- **Verify:** a unit test of the rule; in the browser, a focus loss signalled through the page's own focus check pauses the run (screenshot); natively, an attempt to move focus away from the game window, reported honestly if it can't be done here.
+
+### D. Quit from the menus (rest of item 11)
+
+With only a controller there's no way to close the desktop game.
+
+- **Acceptance:** on the desktop, the title screen offers **Esc** or **B** pressed twice to quit, and the pause screen offers **Q** or **View** pressed twice; the first press shows a warning, as abandoning does. Quitting mid-run behaves exactly like closing the window (the run's last checkpoint stays). Settings and progress are already saved when they change, so nothing extra is written. The browser build doesn't offer it.
+- **Verify:** unit tests of the confirmation rule on both screens; the virtual controller quits the native release binary from the title (exit status 0, and the temporary data folder unchanged).
+
+Owner decisions still open, and not part of this round: one-use continue saves, web hosting, releases, signing, shrinking the art, the trailer, and guardian health.
