@@ -49,9 +49,10 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/audio.rs`](../src/audio.rs) | Embedded audio, effect dispatch, per-scene music choice, and crossfades |
 | [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress and the run checkpoint |
 | [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute, fullscreen, seen tips, and key bindings |
-| [`src/controls.rs`](../src/controls.rs) | Rebindable gameplay actions, the bindable-key table, and input gathering |
+| [`src/controls.rs`](../src/controls.rs) | Rebindable gameplay actions, the bindable-key table, input gathering, and prompt names for keys or controller buttons |
+| [`src/pad.rs`](../src/pad.rs) | Controllers: the fixed layout, stick dead zone, menu directions, and the `gilrs` (desktop) and Gamepad API (browser) readers |
 | [`src/storage.rs`](../src/storage.rs) | Per-platform data directory, atomic file replacement, and browser `localStorage` |
-| [`web/`](../web/) | Browser page and storage plugin used by `scripts/build-web.sh` |
+| [`web/`](../web/) | Browser page, storage plugin, and controller plugin used by `scripts/build-web.sh` |
 
 Macroquad provides windowing, graphics, input, and audio. Cinderwake does not implement its own low-level graphics backend.
 
@@ -156,6 +157,16 @@ Bindings are stored by key name in `settings.json`. Unknown names fall back to t
 
 From the pause screen, **X** asks for confirmation and a second **X** abandons the run with the same losses as a death.
 
+### Controllers
+
+[`src/pad.rs`](../src/pad.rs) reads every connected controller once per frame into one `State` (fourteen buttons and the left stick) and maps it to the same `Input` the keyboard produces; `pad::combine` merges the two, and the keyboard's direction wins if both steer. The layout is fixed and listed in the [README](../README.md#with-a-controller). The stick ignores the inner 24% of its travel and reaches a full run at 70%, so a diagonal push still runs; "down" (drop and slam) needs the stick pushed past 60% and nearer straight down than sideways, so running down a slope of the stick doesn't slam. Menus read button presses and stick pushes once each, with no auto-repeat. Numbered choices map to **X / Y / B**, the left, top, and right face buttons, in the order the cards appear.
+
+A button still held when a menu closes is ignored in play until it is released, so leaving the title with **A** doesn't also jump and choosing a memory with **X** doesn't also strike. Prompts (`controls::Prompts`) name controller buttons after any button press or stick push and keys after any key press or click. The controls page lists the controller button beside each rebindable key.
+
+On the desktop the reader is [gilrs](https://gitlab.com/gilrs-project/gilrs), which handles controllers being connected and removed. On Linux it needs `libudev.so.1`; if gilrs can't start, the game prints a note and runs on the keyboard. In the browser, [`web/cinderwake-pad.js`](../web/cinderwake-pad.js) combines `navigator.getGamepads()` using the API's standard layout numbers. Pads the browser doesn't recognise as standard may have their buttons in other places.
+
+Checks: unit tests for the layout, the dead zone, held-over buttons, menu presses, combining with the keyboard, prompts, and every menu driven by the controller alone. [`scripts/virtual-pad.py`](../scripts/virtual-pad.py) creates a virtual Linux controller through `/dev/uinput` and plays a script of presses. Run with `--snapshot-every 1` (a desktop testing flag that saves `captures/snapshots/NNNN.png` once a second), it drove the release build from the title through movement, jumps, strikes, dodge, all three tools, the atlas, pause, options, and back. In headless Chrome, a scripted pad that replaced `navigator.getGamepads` did the same, plus a reliquary choice. **No physical controller has been tested**, so feel, trigger thresholds, and specific pads (PlayStation, Switch, Steam Deck) are unverified. While the virtual controller exists, any program on the machine that reads controllers can see it, so keep its scripts short.
+
 ## Build and verification
 
 From the repository root, with Rust and Cargo installed:
@@ -184,9 +195,9 @@ The script builds the release executable, creates `dist/Cinderwake.app`, include
 
 Browser-specific behavior: the run seed and profiling use `miniquad::date::now()`, because `std::time` panics in the browser; progress is stored under the `cinderwake/` keys in `localStorage`; **F12** screenshots are disabled; and audio starts after the first key press, as browsers require. The build was verified in headless Chrome 154 on Linux at device pixel ratios of 1 and 1.25: it loaded with no console errors, reached the title screen, started a run, moved, jumped, opened the atlas and pause screen, and kept progress across a reload. In round 3, logging each audio source the page started showed the hearth loop on the title and the Aqueduct loop starting when a run began. Frame rate, how the audio sounds, and other browsers have not been checked.
 
-The [Rust checks workflow](../.github/workflows/ci.yml) runs formatting, strict Clippy, and tests on GitHub's macOS and Ubuntu runners (Ubuntu installs the X11, OpenGL, and ALSA development packages first). A separate job lints the `wasm32-unknown-unknown` build and compiles and links it in debug mode. Neither job launches the graphical game or replaces visual runtime checks. The Ubuntu and browser jobs were added in round 2 of the improvements and were checked only by running the same cargo commands locally; their first real run happens on GitHub.
+The [Rust checks workflow](../.github/workflows/ci.yml) runs formatting, strict Clippy, and tests on GitHub's macOS and Ubuntu runners (Ubuntu installs the X11, OpenGL, ALSA, and udev development packages first). A separate job lints the `wasm32-unknown-unknown` build and compiles and links it in debug mode. Neither job launches the graphical game or replaces visual runtime checks. The Ubuntu and browser jobs were added in round 2 of the improvements and were checked only by running the same cargo commands locally; their first real run happens on GitHub.
 
-`./scripts/package-linux.sh` builds the release executable and writes `dist/cinderwake-linux-x86_64.tar.gz` with the binary, licenses, and a README that states the minimum glibc (read from the binary's symbol versions; 2.34 for the build tested here). The executable links only glibc and ALSA directly; Macroquad loads X11 and OpenGL at runtime. The tarball was verified by extracting it into `target/` and running `--ui-gallery` from the extracted copy. It is not signed or published.
+`./scripts/package-linux.sh` builds the release executable and writes `dist/cinderwake-linux-x86_64.tar.gz` with the binary, licenses, and a README that states the minimum glibc (read from the binary's symbol versions; 2.34 for the build tested here). The executable links only glibc, ALSA, and libudev (for controllers) directly; Macroquad loads X11 and OpenGL at runtime. The tarball was verified by extracting it into `target/` and running `--ui-gallery` from the extracted copy. It is not signed or published.
 
 A balance regression test (`difficulty_keeps_pace_with_a_runs_growing_build` in `src/game.rs`) runs real simulated duels. The expected build at each stage (+3 weapon tiers and one Ferocity and one Resolve memory per biome) holds attack against wardens and brutes with every weapon, and faces the Regent standing still. Enemies start ready to attack, as they are when the player arrives. With the current numbers, mean guardian kill time is 0.54 s in the opening, 0.54 s at stage 1, and 0.66 s in the Crown; without stage scaling it falls to 0.34 s and 0.26 s. Face-tanking the Regent with the Crown build takes 7–9 s and costs 62–78% of vitality. Guardians usually die within a second in these duels, so a second test (`held_attack_no_longer_stun_locks_guardians`) makes them unkillable for five seconds against the opening build. Holding attack, wardens, brutes, and archers land 2–3 strikes each; dodging each telegraph takes no warden or brute strikes. Before poise, wardens and brutes landed 0 (1 against the slow hammer). The numbers are first-pass tuning from simulation, not from human playtesting.
 
@@ -202,7 +213,7 @@ Run capture commands from the repository root. Outputs are written beneath `capt
 | `--demo` | Continuous scripted practice play | Runs until closed |
 | `--gallery` | Four staged biome views | `captures/biome-0.png` through `biome-3.png` |
 | `--sprite-preview` | Eight hero animation panels | `captures/animation-preview.png` |
-| `--ui-gallery` | Nineteen frozen, fixed-seed interface fixtures, including the options and controls pages, abandon confirmation, a tip banner, a reliquary choice, the atlas fog, a HUD with rebound keys, and the title with a run to continue | `captures/ui-*.png` |
+| `--ui-gallery` | Twenty-three frozen, fixed-seed interface fixtures, including the options and controls pages, abandon confirmation, a tip banner, a reliquary choice, the atlas fog, a HUD with rebound keys, the title with a run to continue, and the HUD, title, Keeper, and memory choice with controller prompts | `captures/ui-*.png` |
 | `--environment-tour` | 24 seconds of camera traversal across all four biomes | 480 PNGs at 20 fps in `captures/tour/` |
 | `--motion-capture` | 15 seconds of scripted input with live physics and combat | 300 PNGs at 20 fps in `captures/motion/` |
 | `--vertical-capture` | A complete fixed-seed Aqueduct route through all elevations | 20 PNGs per simulated second in `captures/vertical/`; about 25 seconds |
@@ -273,7 +284,7 @@ This is a playable prototype, with these limits visible in the current implement
 - Three melee weapons, a small skill set, shared melee artwork, and reused animation poses for some actions.
 - One final boss, one ending, and a limited mutation and upgrade economy. No blueprint unlock tree, extensive affixes/synergies, or traversal-rune progression.
 - An atlas with a simple cell-based fog of war; no challenge modes or DLC systems.
-- Keyboard/mouse controls with rebindable gameplay keys, but no gamepad support; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, lighting, fullscreen, and key bindings.
+- Keyboard/mouse controls with rebindable gameplay keys, and controllers with a fixed layout that has been tested only with simulated devices; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, lighting, fullscreen, and key bindings.
 - macOS Apple Silicon and Linux verification only, an experimental browser build tested only in headless Chrome, and local, unpublished packages (an ad-hoc signed macOS app and a Linux tarball).
 - Prototype audio, balancing, encounter variety, and animation coverage. Visual captures and automated tests are complementary checks, not a guarantee of zero defects.
 

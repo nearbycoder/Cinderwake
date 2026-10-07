@@ -6,6 +6,7 @@ mod controls;
 mod environment;
 mod game;
 mod launch;
+mod pad;
 mod particles;
 mod postprocess;
 mod render;
@@ -40,31 +41,41 @@ fn read_input(g: &Game) -> Input {
         },
     )
 }
-fn menus(g: &mut Game) {
-    if is_key_pressed(KeyCode::M) {
+/// Menu keys pressed this frame, passed in so menus can be tested without a window.
+struct MenuKeys<'a> {
+    pressed: &'a dyn Fn(KeyCode) -> bool,
+    last: Option<KeyCode>,
+}
+fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
+    use pad::{Button, Dir};
+    if (keys.pressed)(KeyCode::M) {
         g.settings.muted = !g.settings.muted;
         g.persist_settings();
     }
     if g.screen == Screen::Options {
-        options_menu(g);
+        options_menu(g, keys, pad);
         return;
     }
     if g.screen == Screen::Controls {
-        controls_menu(g);
+        controls_menu(g, keys, pad);
         return;
     }
-    if is_key_pressed(KeyCode::Tab) && g.screen == Screen::Playing {
+    if ((keys.pressed)(KeyCode::Tab) || pad.pressed(Button::Select)) && g.screen == Screen::Playing
+    {
         g.map = !g.map;
     }
-    if matches!(g.screen, Screen::Title | Screen::Paused) && is_key_pressed(KeyCode::O) {
+    if matches!(g.screen, Screen::Title | Screen::Paused)
+        && ((keys.pressed)(KeyCode::O) || pad.pressed(Button::North))
+    {
         g.open_options();
         return;
     }
-    if g.screen == Screen::Paused && is_key_pressed(KeyCode::X) {
+    if g.screen == Screen::Paused && ((keys.pressed)(KeyCode::X) || pad.pressed(Button::West)) {
         g.request_abandon();
         return;
     }
-    if is_key_pressed(KeyCode::Escape) {
+    let pause = (keys.pressed)(KeyCode::Escape) || pad.pressed(Button::Start);
+    if pause || (g.screen == Screen::Paused && pad.pressed(Button::East)) {
         g.abandon_armed = false;
         g.screen = if g.screen == Screen::Playing {
             Screen::Paused
@@ -74,56 +85,52 @@ fn menus(g: &mut Game) {
             g.screen
         };
     }
+    let confirm = (keys.pressed)(KeyCode::Enter) || pad.pressed(Button::South);
+    // A numbered choice: 1 / 2 / 3, or X / Y / B on a controller.
+    let choice = |i: usize| {
+        (keys.pressed)([KeyCode::Key1, KeyCode::Key2, KeyCode::Key3][i])
+            || pad.pressed(controls::CHOICE_BUTTONS[i])
+    };
     match g.screen {
         Screen::Title if g.resume.is_some() => {
-            if is_key_pressed(KeyCode::Enter) {
+            if confirm || pad.pressed(Button::Start) {
                 g.continue_run();
-            } else if is_key_pressed(KeyCode::N) {
+            } else if (keys.pressed)(KeyCode::N) || pad.pressed(Button::West) {
                 g.start();
             }
         }
         Screen::Title | Screen::Dead | Screen::Victory => {
-            if is_key_pressed(KeyCode::Enter) {
+            if confirm || pad.pressed(Button::Start) {
                 g.start();
             }
         }
         Screen::Reliquary => {
-            if is_key_pressed(KeyCode::Key1) {
+            if choice(0) {
                 g.choose_weapon(true);
-            } else if is_key_pressed(KeyCode::Key2) {
+            } else if choice(1) {
                 g.choose_weapon(false);
             }
         }
         Screen::Scroll => {
-            for (i, k) in [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3]
-                .iter()
-                .enumerate()
-            {
-                if is_key_pressed(*k) {
-                    g.upgrade(i);
-                }
+            if let Some(i) = (0..3).find(|i| choice(*i)) {
+                g.upgrade(i);
             }
         }
         Screen::Camp => {
-            for (i, k) in [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3]
-                .iter()
-                .enumerate()
-            {
-                if is_key_pressed(*k) {
-                    g.buy(i);
-                }
+            if let Some(i) = (0..3).find(|i| choice(*i)) {
+                g.buy(i);
             }
             let route = g.route;
-            if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
+            if (keys.pressed)(KeyCode::A) || (keys.pressed)(KeyCode::Left) || pad.nav(Dir::Left) {
                 g.route = 0;
             }
-            if is_key_pressed(KeyCode::D) || is_key_pressed(KeyCode::Right) {
+            if (keys.pressed)(KeyCode::D) || (keys.pressed)(KeyCode::Right) || pad.nav(Dir::Right) {
                 g.route = 1;
             }
             if g.route != route {
                 g.sounds.push(Sfx::Select);
             }
-            if is_key_pressed(KeyCode::Enter) {
+            if confirm || pad.pressed(Button::Start) {
                 g.travel();
             }
         }
@@ -131,28 +138,30 @@ fn menus(g: &mut Game) {
     }
 }
 
-fn options_menu(g: &mut Game) {
-    let pressed = |keys: &[KeyCode]| keys.iter().any(|k| is_key_pressed(*k));
-    if pressed(&[KeyCode::Escape, KeyCode::O]) {
+fn options_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
+    use pad::{Button, Dir};
+    let pressed = |list: &[KeyCode]| list.iter().any(|k| (keys.pressed)(*k));
+    if pressed(&[KeyCode::Escape, KeyCode::O]) || pad.pressed(Button::East) {
         g.close_options();
         return;
     }
     let rows = settings::Settings::ROWS;
-    if pressed(&[KeyCode::W, KeyCode::Up]) {
+    if pressed(&[KeyCode::W, KeyCode::Up]) || pad.nav(Dir::Up) {
         g.options_row = (g.options_row + rows - 1) % rows;
     }
-    if pressed(&[KeyCode::S, KeyCode::Down]) {
+    if pressed(&[KeyCode::S, KeyCode::Down]) || pad.nav(Dir::Down) {
         g.options_row = (g.options_row + 1) % rows;
     }
-    if g.options_row == settings::Settings::CONTROLS_ROW
-        && pressed(&[KeyCode::Enter, KeyCode::Space, KeyCode::D, KeyCode::Right])
-    {
+    let forward = pressed(&[KeyCode::D, KeyCode::Right, KeyCode::Enter, KeyCode::Space])
+        || pad.nav(Dir::Right)
+        || pad.pressed(Button::South);
+    if g.options_row == settings::Settings::CONTROLS_ROW && forward {
         g.open_controls();
         return;
     }
-    let delta = if pressed(&[KeyCode::A, KeyCode::Left]) {
+    let delta = if pressed(&[KeyCode::A, KeyCode::Left]) || pad.nav(Dir::Left) {
         -1
-    } else if pressed(&[KeyCode::D, KeyCode::Right, KeyCode::Enter, KeyCode::Space]) {
+    } else if forward {
         1
     } else {
         0
@@ -164,31 +173,32 @@ fn options_menu(g: &mut Game) {
     }
 }
 
-fn controls_menu(g: &mut Game) {
-    let pressed = |keys: &[KeyCode]| keys.iter().any(|k| is_key_pressed(*k));
+fn controls_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
+    use pad::{Button, Dir};
+    let pressed = |list: &[KeyCode]| list.iter().any(|k| (keys.pressed)(*k));
     if g.rebinding {
         // Checked before Enter below, so the press that began listening is
         // never captured as the new key.
-        if pressed(&[KeyCode::Escape]) {
+        if pressed(&[KeyCode::Escape]) || pad.pressed(Button::East) {
             g.rebinding = false;
             g.controls_note = None;
-        } else if let Some(key) = get_last_key_pressed() {
+        } else if let Some(key) = keys.last {
             g.rebind(key);
         }
         return;
     }
-    if pressed(&[KeyCode::Escape]) {
+    if pressed(&[KeyCode::Escape]) || pad.pressed(Button::East) {
         g.close_controls();
         return;
     }
     let rows = controls::Action::ALL.len() + 1;
-    if pressed(&[KeyCode::W, KeyCode::Up]) {
+    if pressed(&[KeyCode::W, KeyCode::Up]) || pad.nav(Dir::Up) {
         g.controls_row = (g.controls_row + rows - 1) % rows;
     }
-    if pressed(&[KeyCode::S, KeyCode::Down]) {
+    if pressed(&[KeyCode::S, KeyCode::Down]) || pad.nav(Dir::Down) {
         g.controls_row = (g.controls_row + 1) % rows;
     }
-    if pressed(&[KeyCode::Enter, KeyCode::Space]) {
+    if pressed(&[KeyCode::Enter, KeyCode::Space]) || pad.pressed(Button::South) {
         if g.controls_row == controls::Action::ALL.len() {
             g.reset_controls();
         } else {
@@ -206,7 +216,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 19] = [
+const UI_GALLERY_NAMES: [&str; 23] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -226,6 +236,10 @@ const UI_GALLERY_NAMES: [&str; 19] = [
     "ui-16-controls",
     "ui-17-rebound-hud",
     "ui-18-title-continue",
+    "ui-19-pad-hud",
+    "ui-20-pad-title-continue",
+    "ui-21-pad-camp",
+    "ui-22-pad-memory",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -356,6 +370,26 @@ fn ui_fixture(index: usize) -> Game {
             g.level = world::Level::generate(4017, world::Biome::Foundry, world::Threat::BASE);
             g.resume = Some(g.checkpoint());
         }
+        // The same screens after a controller was used last.
+        19 => {
+            g.pad_prompts = true;
+            g.hint = Some((Hint::Strike, HINT_SECONDS));
+        }
+        20 => {
+            g.pad_prompts = true;
+            g.screen = Screen::Title;
+            g.stage = 1;
+            g.level = world::Level::generate(4017, world::Biome::Foundry, world::Threat::BASE);
+            g.resume = Some(g.checkpoint());
+        }
+        21 => {
+            g.pad_prompts = true;
+            g.screen = Screen::Camp;
+        }
+        22 => {
+            g.pad_prompts = true;
+            g.screen = Screen::Scroll;
+        }
         14 => {
             g.screen = Screen::Reliquary;
             g.offer = Some(Weapon::Hammer);
@@ -459,6 +493,16 @@ async fn main() {
     let profile_render = args.iter().any(|s| s == "--profile-render");
     let demo = args.iter().any(|s| s == "--demo") || automated;
     let staged = ui_gallery || gallery || environment_tour;
+    // Testing aid: saves the frame every so many seconds of real time, so
+    // runs driven from outside (such as scripts/virtual-pad.py) leave a record.
+    let snapshot_every = args
+        .iter()
+        .position(|a| a == "--snapshot-every")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|s| *s > 0. && cfg!(not(target_arch = "wasm32")));
+    let mut next_snapshot = 0.;
+    let mut snapshots = 0u32;
     let start_at = if cfg!(target_arch = "wasm32") {
         launch::StartAt::from_page()
     } else {
@@ -531,6 +575,7 @@ async fn main() {
         fullscreen = true;
         set_fullscreen(true);
     }
+    let mut pad = pad::Pad::new();
     let mut previous_level = (g.level.seed, g.level.biome, g.seed);
     let mut arrival = 0.0_f32;
     let mut render_times = Vec::new();
@@ -553,8 +598,27 @@ async fn main() {
             g.time = 4.;
             g.intro = 0.;
         }
+        pad.poll();
+        let screen_before_menus = g.screen;
         if !staged && !automated {
-            menus(&mut g);
+            // Prompts follow whichever device was used last.
+            if pad.touched() {
+                g.pad_prompts = true;
+            } else if !get_keys_pressed().is_empty()
+                || is_mouse_button_pressed(MouseButton::Left)
+                || is_mouse_button_pressed(MouseButton::Right)
+            {
+                g.pad_prompts = false;
+            }
+            let pressed = |k| is_key_pressed(k);
+            let keys = MenuKeys {
+                pressed: &pressed,
+                last: get_last_key_pressed(),
+            };
+            menus(&mut g, &keys, &pad);
+        }
+        if screen_before_menus != Screen::Playing || g.screen != Screen::Playing {
+            pad.hold_over();
         }
         if !staged && !automated {
             if is_key_pressed(KeyCode::F11) {
@@ -581,7 +645,7 @@ async fn main() {
         let mut input = if staged {
             Input::default()
         } else {
-            read_input(&g)
+            pad::combine(read_input(&g), pad.gameplay())
         };
         if vertical_capture && !staged {
             input = traversal.input(&g);
@@ -767,6 +831,15 @@ async fn main() {
             // are excluded, so this is not presented as GPU frame rate.
             render_times.push((miniquad::date::now() - frame_started) * 1000.);
         }
+        if let Some(every) = snapshot_every {
+            let now = miniquad::date::now();
+            if now >= next_snapshot {
+                next_snapshot = now + every;
+                std::fs::create_dir_all("captures/snapshots").ok();
+                get_screen_data().export_png(&format!("captures/snapshots/{snapshots:04}.png"));
+                snapshots += 1;
+            }
+        }
         // Browsers have no writable `captures/` directory.
         if !staged
             && (is_key_pressed(KeyCode::F12) && cfg!(not(target_arch = "wasm32"))
@@ -865,6 +938,75 @@ mod capture_tests {
         g.settings.shake = 0;
         assert_eq!(camera_shake(&g), Vec2::ZERO);
         assert_eq!(g.shake, 6., "the simulation's shake timer is untouched");
+    }
+
+    #[test]
+    fn a_controller_reaches_every_menu() {
+        use pad::Button::*;
+        let none = |_: KeyCode| false;
+        let keys = MenuKeys {
+            pressed: &none,
+            last: None,
+        };
+        let mut pad = pad::Pad::new();
+        // One frame with the buttons down, then one with them released.
+        let mut press = |g: &mut Game, buttons: &[pad::Button]| {
+            pad.feed(pad::State::with(buttons, Vec2::ZERO));
+            menus(g, &keys, &pad);
+            pad.feed(pad::State::default());
+            menus(g, &keys, &pad);
+        };
+        let mut g = Game::new(4017, save::Save::default());
+        assert_eq!(g.screen, Screen::Title);
+        press(&mut g, &[South]);
+        assert_eq!(g.screen, Screen::Playing);
+        press(&mut g, &[Select]);
+        assert!(g.map);
+        press(&mut g, &[Select]);
+        assert!(!g.map);
+        press(&mut g, &[Start]);
+        assert_eq!(g.screen, Screen::Paused);
+        press(&mut g, &[East]);
+        assert_eq!(g.screen, Screen::Playing, "B also resumes");
+        press(&mut g, &[Start]);
+        press(&mut g, &[North]);
+        assert_eq!(g.screen, Screen::Options);
+        press(&mut g, &[DpadDown]);
+        assert_eq!(g.options_row, 1);
+        let before = g.settings.clone();
+        press(&mut g, &[DpadLeft]);
+        assert_ne!(g.settings, before, "left lowers the effects volume");
+        g.options_row = settings::Settings::CONTROLS_ROW;
+        press(&mut g, &[South]);
+        assert_eq!(g.screen, Screen::Controls);
+        press(&mut g, &[DpadDown]);
+        assert_eq!(g.controls_row, 1);
+        press(&mut g, &[East]);
+        assert_eq!(g.screen, Screen::Options);
+        press(&mut g, &[East]);
+        assert_eq!(g.screen, Screen::Paused);
+        press(&mut g, &[West]);
+        assert!(g.abandon_armed && g.screen == Screen::Paused);
+        press(&mut g, &[West]);
+        assert_eq!(g.screen, Screen::Dead);
+        press(&mut g, &[South]);
+        assert_eq!(g.screen, Screen::Playing);
+        g.screen = Screen::Scroll;
+        press(&mut g, &[North]);
+        assert_eq!((g.screen, g.player.power), (Screen::Playing, [1, 2, 1]));
+        g.screen = Screen::Reliquary;
+        g.offer = Some(Weapon::Hammer);
+        press(&mut g, &[West]);
+        assert_eq!(g.player.weapon, Weapon::Hammer);
+        g.screen = Screen::Camp;
+        g.route = 0;
+        press(&mut g, &[DpadRight]);
+        assert_eq!(g.route, 1);
+        press(&mut g, &[South]);
+        assert_eq!(
+            (g.screen, g.level.biome),
+            (Screen::Playing, world::Biome::Foundry)
+        );
     }
 
     #[test]

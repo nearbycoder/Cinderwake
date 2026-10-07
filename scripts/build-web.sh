@@ -17,7 +17,7 @@ out=dist/web
 rm -rf "$out"
 mkdir -p "$out"
 cp target/wasm32-unknown-unknown/release/cinderwake.wasm "$out/"
-cp web/index.html web/cinderwake-storage.js "$out/"
+cp web/index.html web/cinderwake-storage.js web/cinderwake-pad.js "$out/"
 cp "$macroquad_dir/js/mq_js_bundle.js" "$out/"
 cp "$macroquad_dir/LICENSE-MIT" "$out/MACROQUAD-LICENSE-MIT.txt"
 cp LICENSE "$out/LICENSE.txt"

@@ -253,6 +253,93 @@ impl Bindings {
     }
 }
 
+/// Fixed menu keys, named in prompts alongside the gameplay actions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Menu {
+    Confirm,
+    Back,
+    Pause,
+    Atlas,
+    Options,
+    NewRun,
+    Abandon,
+    /// Moving between rows, changing a value, or picking a route.
+    Rows,
+    Adjust,
+    /// The first, second, or third of a screen's numbered choices.
+    Choice(usize),
+}
+
+/// Names for on-screen prompts: the player's keys, or the controller's fixed
+/// layout while a controller was the last thing used.
+#[derive(Clone, Copy)]
+pub struct Prompts<'a> {
+    keys: &'a Bindings,
+    pad: bool,
+}
+impl<'a> Prompts<'a> {
+    pub fn new(keys: &'a Bindings, pad: bool) -> Self {
+        Self { keys, pad }
+    }
+    pub fn pad(&self) -> bool {
+        self.pad
+    }
+    pub fn action(&self, action: Action) -> &'static str {
+        if self.pad {
+            crate::pad::label(action)
+        } else {
+            self.keys.short(action)
+        }
+    }
+    /// Both directions of movement, for control lists.
+    pub fn movement(&self) -> String {
+        if self.pad {
+            "STICK".into()
+        } else {
+            format!(
+                "{} / {}",
+                self.keys.short(Action::Left),
+                self.keys.short(Action::Right)
+            )
+        }
+    }
+    pub fn menu(&self, menu: Menu) -> &'static str {
+        use crate::pad::Button;
+        if self.pad {
+            match menu {
+                Menu::Confirm => Button::South.label(),
+                Menu::Back => Button::East.label(),
+                Menu::Pause => Button::Start.label(),
+                Menu::Atlas => Button::Select.label(),
+                Menu::Options => Button::North.label(),
+                Menu::NewRun | Menu::Abandon => Button::West.label(),
+                Menu::Rows => "D-PAD",
+                Menu::Adjust => "LEFT / RIGHT",
+                Menu::Choice(i) => CHOICE_BUTTONS[i.min(2)].label(),
+            }
+        } else {
+            match menu {
+                Menu::Confirm => "ENTER",
+                Menu::Back | Menu::Pause => "ESC",
+                Menu::Atlas => "TAB",
+                Menu::Options => "O",
+                Menu::NewRun => "N",
+                Menu::Abandon => "X",
+                Menu::Rows => "W / S",
+                Menu::Adjust => "A / D",
+                Menu::Choice(i) => ["1", "2", "3"][i.min(2)],
+            }
+        }
+    }
+}
+/// Numbered choices on a controller: left, top, and right face buttons, in
+/// the same order as the cards on screen.
+pub const CHOICE_BUTTONS: [crate::pad::Button; 3] = [
+    crate::pad::Button::West,
+    crate::pad::Button::North,
+    crate::pad::Button::East,
+];
+
 /// Keyboard and mouse state for one frame, as closures so input mapping can be
 /// tested without a window.
 pub struct KeyState<'a> {
@@ -316,6 +403,27 @@ mod tests {
         assert!(i.jump && i.down, "arrow keys are fixed alternatives");
         assert_eq!(b.short(Action::Dodge), "SHIFT");
         assert_eq!(b.label(Action::Jump), "SPACE / W");
+    }
+
+    #[test]
+    fn prompts_follow_the_last_device() {
+        let mut b = Bindings::default();
+        b.bind(Action::Jump, KeyCode::K).unwrap();
+        let keys = Prompts::new(&b, false);
+        let pad = Prompts::new(&b, true);
+        assert_eq!(keys.action(Action::Jump), "K");
+        assert_eq!(pad.action(Action::Jump), "A");
+        assert_eq!(keys.movement(), "A / D");
+        assert_eq!(pad.movement(), "STICK");
+        assert_eq!(keys.menu(Menu::Confirm), "ENTER");
+        assert_eq!(pad.menu(Menu::Confirm), "A");
+        assert_eq!(
+            (0..3)
+                .map(|i| pad.menu(Menu::Choice(i)))
+                .collect::<Vec<_>>(),
+            ["X", "Y", "B"]
+        );
+        assert_eq!(keys.menu(Menu::Choice(2)), "3");
     }
 
     #[test]

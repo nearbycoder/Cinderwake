@@ -1,6 +1,6 @@
 //! Live interface composed over generated frames and item art.
 use crate::{
-    controls::Action,
+    controls::{Action, Menu},
     game::*,
     render::{c, INK},
     settings::{RowValue, Settings},
@@ -123,20 +123,22 @@ impl Ui {
             },
             g.save.embers
         );
+        let p = g.prompts();
         if let Some(run) = &g.resume {
             self.button(
-                "ENTER   Continue the descent",
+                &format!("{}   Continue the descent", p.menu(Menu::Confirm)),
                 Rect::new(145., 483., 418., 64.),
             );
             self.centered_at(
                 &format!(
-                    "{}  /  {}   N  New descent",
+                    "{}  /  {}   {}  New descent",
                     run.biome.name(),
                     if run.at_keeper {
                         "AT THE KEEPER".to_string()
                     } else {
                         format!("STAGE {} OF 3", run.stage + 1)
-                    }
+                    },
+                    p.menu(Menu::NewRun)
                 ),
                 354.,
                 574.,
@@ -146,18 +148,17 @@ impl Ui {
             self.centered_at(&record, 354., 596., 14., c(MUTED));
         } else {
             self.button(
-                "ENTER   Begin the descent",
+                &format!("{}   Begin the descent", p.menu(Menu::Confirm)),
                 Rect::new(145., 483., 418., 64.),
             );
             self.centered_at(&record, 354., 579., 16., c(TEAL));
         }
         self.centered_at(
             &{
-                let k = |a| g.settings.keys.short(a);
+                let k = |a| p.action(a);
                 format!(
-                    "{} / {}  Move   {}  Jump   {}  Strike   {}  Dodge   {}  Parry",
-                    k(Action::Left),
-                    k(Action::Right),
+                    "{}  Move   {}  Jump   {}  Strike   {}  Dodge   {}  Parry",
+                    p.movement(),
                     k(Action::Jump),
                     k(Action::Strike),
                     k(Action::Dodge),
@@ -169,10 +170,21 @@ impl Ui {
             15.,
             c(MUTED),
         );
-        self.centered_at("O  Options      M  Mute", 354., 644., 14., c(MUTED));
+        self.centered_at(
+            &if p.pad() {
+                format!("{}  Options", p.menu(Menu::Options))
+            } else {
+                format!("{}  Options      M  Mute", p.menu(Menu::Options))
+            },
+            354.,
+            644.,
+            14.,
+            c(MUTED),
+        );
     }
     fn hud(&self, g: &Game) {
         let p = &g.player;
+        let prompts = g.prompts();
         // Individual framed clusters leave the central play field unobstructed.
         self.skin.panel(Rect::new(16., 16., 322., 80.));
         self.skin.crest(Rect::new(26., 26., 62., 58.));
@@ -219,7 +231,13 @@ impl Ui {
         );
         self.skin.panel(Rect::new(1036., 16., 228., 80.));
         self.minimap(g, Rect::new(1054., 27., 192., 44.));
-        self.centered_at("TAB  VERTICAL ATLAS", 1150., 83., 11., c(MUTED));
+        self.centered_at(
+            &format!("{}  VERTICAL ATLAS", prompts.menu(Menu::Atlas)),
+            1150.,
+            83.,
+            11.,
+            c(MUTED),
+        );
 
         // Artwork identifies equipment at a glance; bindings and cooldowns stay live.
         let weapon_icon = match p.weapon {
@@ -229,28 +247,28 @@ impl Ui {
         };
         let slots = [
             (
-                g.settings.keys.short(Action::Strike),
+                prompts.action(Action::Strike),
                 p.weapon.name(),
                 weapon_icon,
                 p.attack_cd,
                 p.weapon.delay(),
             ),
             (
-                g.settings.keys.short(Action::Glassbolt),
+                prompts.action(Action::Glassbolt),
                 "GLASSBOLT",
                 3,
                 p.bow_cd,
                 0.32,
             ),
             (
-                g.settings.keys.short(Action::FireVessel),
+                prompts.action(Action::FireVessel),
                 "FIRE VESSEL",
                 4,
                 p.grenade_cd,
                 5.,
             ),
             (
-                g.settings.keys.short(Action::ArcSnare),
+                prompts.action(Action::ArcSnare),
                 "ARC SNARE",
                 5,
                 p.trap_cd,
@@ -294,7 +312,7 @@ impl Ui {
             Rect::new(838., 649., 40., 44.),
             if p.flasks == 0 { 0.4 } else { 1. },
         );
-        self.key(g.settings.keys.short(Action::Heal), 844., 683.);
+        self.key(prompts.action(Action::Heal), 844., 683.);
         self.text("HEALING FLASK", 886., 665., 14., c(PALE));
         self.text(
             &format!("{} / {}", p.flasks, 2 + g.save.flask),
@@ -306,22 +324,22 @@ impl Ui {
         self.skin.panel(Rect::new(1024., 638., 240., 72.));
         self.skin.icon(7, Rect::new(1038., 650., 29., 29.), 1.);
         self.text(
-            &format!("{}  PARRY", g.settings.keys.short(Action::Parry)),
+            &format!("{}  PARRY", prompts.action(Action::Parry)),
             1077.,
             669.,
             15.,
             c(PALE),
         );
         self.skin.icon(15, Rect::new(1148., 650., 27., 28.), 1.);
-        self.text(
-            g.settings.keys.short(Action::Dodge),
-            1184.,
-            668.,
-            14.,
-            c(PALE),
-        );
+        self.text(prompts.action(Action::Dodge), 1184., 668., 14., c(PALE));
         self.text("DODGE", 1184., 684., 11., c(MUTED));
-        self.text("ESC  PAUSE", 1077., 695., 13., c(MUTED));
+        self.text(
+            &format!("{}  PAUSE", prompts.menu(Menu::Pause)),
+            1077.,
+            695.,
+            13.,
+            c(MUTED),
+        );
     }
     fn prompt(&self, text: &str, y: f32) {
         let width = (measure_text(text, None, 16, 1.).width + 64.).max(250.);
@@ -376,7 +394,7 @@ impl Ui {
         }
         if g.screen == Screen::Playing && !g.map {
             if let Some((hint, _)) = g.hint {
-                let text = hint.text(&g.settings.keys);
+                let text = hint.text(&g.prompts());
                 let text = text.as_str();
                 // The plaque's ornate end caps need generous padding.
                 let width = measure_text(text, None, 16, 1.).width + 176.;
@@ -395,7 +413,7 @@ impl Ui {
                     ObjectKind::Lore => "READ THE INSCRIPTION",
                     ObjectKind::Secret => "BREAK THE SEAL",
                 };
-                let key = g.settings.keys.short(Action::Interact);
+                let key = g.prompts().action(Action::Interact);
                 self.prompt(&format!("{key}   {action}"), 587.);
             }
             if g.notice_time > 0. {
@@ -440,8 +458,8 @@ impl Ui {
                 c(PALE),
             );
             let (jump, down) = (
-                g.settings.keys.short(Action::Jump),
-                g.settings.keys.short(Action::Down),
+                g.prompts().action(Action::Jump),
+                g.prompts().action(Action::Down),
             );
             self.center(
                 &format!("{jump} to climb stairways; press again to double jump  /  {down} + {jump} to drop  /  {down} in the air to slam"),
@@ -459,7 +477,12 @@ impl Ui {
                 14.,
                 c(MUTED),
             );
-            self.center("TAB   Return to the descent", 612., 17., c(TEAL));
+            self.center(
+                &format!("{}   Return to the descent", g.prompts().menu(Menu::Atlas)),
+                612.,
+                17.,
+                c(TEAL),
+            );
         }
         if matches!(
             g.screen,
@@ -475,7 +498,7 @@ impl Ui {
             draw_rectangle(0., 0., 1280., 720., INK.with_alpha(0.73));
             match g.screen {
                 Screen::Paused => self.paused(g),
-                Screen::Scroll => self.disciplines(),
+                Screen::Scroll => self.disciplines(g),
                 Screen::Reliquary => self.reliquary(g),
                 Screen::Camp => self.camp(g),
                 Screen::Dead | Screen::Victory => self.result(g),
@@ -499,14 +522,10 @@ impl Ui {
     }
     fn paused(&self, g: &Game) {
         self.modal(Rect::new(255., 114., 770., 493.), "The city can wait", 221.);
-        let k = |a| g.settings.keys.short(a).to_string();
+        let p = g.prompts();
+        let k = |a| p.action(a).to_string();
         let rows = [
-            (
-                format!("{} / {}", k(Action::Left), k(Action::Right)),
-                "Move",
-                k(Action::Jump),
-                "Double jump",
-            ),
+            (p.movement(), "Move", k(Action::Jump), "Double jump"),
             (
                 k(Action::Strike),
                 "Strike",
@@ -525,7 +544,7 @@ impl Ui {
             (
                 format!("{}+{}", k(Action::Down), k(Action::Jump)),
                 "Drop through",
-                "TAB".into(),
+                p.menu(Menu::Atlas).into(),
                 "Atlas",
             ),
         ];
@@ -536,21 +555,32 @@ impl Ui {
             self.key(right, 664., y);
             self.text(b, 751., y + 18., 19., c(PALE));
         }
-        self.button("ESC   Resume the descent", Rect::new(423., 493., 434., 57.));
+        self.button(
+            &format!("{}   Resume the descent", p.menu(Menu::Pause)),
+            Rect::new(423., 493., 434., 57.),
+        );
         if g.abandon_armed {
             self.center(
-                "Press X again to abandon this run. Carried embers and equipment will be lost.",
+                &format!(
+                    "Press {} again to abandon this run. Carried embers and equipment will be lost.",
+                    p.menu(Menu::Abandon)
+                ),
                 577.,
                 15.,
                 c(0xef9c81),
             );
         } else {
             self.center(
-                if g.settings.muted {
-                    "O  Options      X  Abandon run      M  Sound is muted"
-                } else {
-                    "O  Options      X  Abandon run      M  Sound is on"
-                },
+                &format!(
+                    "{}  Options      {}  Abandon run{}",
+                    p.menu(Menu::Options),
+                    p.menu(Menu::Abandon),
+                    match (p.pad(), g.settings.muted) {
+                        (true, _) => "",
+                        (false, true) => "      M  Sound is muted",
+                        (false, false) => "      M  Sound is on",
+                    }
+                ),
                 577.,
                 15.,
                 c(MUTED),
@@ -579,6 +609,8 @@ impl Ui {
                 keys.label(*action)
             };
             self.text(&label, x + 170., y + 18., 17., c(TEAL));
+            // The controller layout is fixed; it's shown for reference.
+            self.text(crate::pad::label(*action), x + 282., y + 18., 14., c(GOLD));
         }
         let reset = g.controls_row == Action::ALL.len();
         if reset {
@@ -590,23 +622,36 @@ impl Ui {
             17.,
             c(if reset { GOLD } else { PALE }),
         );
+        let p = g.prompts();
         let note = if g.rebinding {
-            "Press the new key now. ESC cancels."
+            if p.pad() {
+                "Press the new key on the keyboard now. ESC or B cancels."
+            } else {
+                "Press the new key now. ESC cancels."
+            }
         } else {
             g.controls_note.as_deref().unwrap_or(
-                "Arrow keys and mouse buttons always work too. Menus keep ESC, ENTER, TAB, and M.",
+                "Arrows and mouse buttons work too; menus keep ESC, ENTER, TAB, M. Controller buttons (gold) are fixed.",
             )
         };
         self.center(note, 500., 15., c(MUTED));
-        self.button("ESC   Back", Rect::new(483., 516., 314., 46.));
+        self.button(
+            &format!("{}   Back", p.menu(Menu::Back)),
+            Rect::new(483., 516., 314., 46.),
+        );
         self.center(
-            "W / S  choose      ENTER  rebind or restore",
+            &format!(
+                "{}  choose      {}  rebind or restore",
+                p.menu(Menu::Rows),
+                p.menu(Menu::Confirm)
+            ),
             584.,
             14.,
             c(MUTED),
         );
     }
     fn options(&self, g: &Game) {
+        let p = g.prompts();
         self.modal(Rect::new(255., 114., 770., 493.), "Options", 221.);
         for row in 0..Settings::ROWS {
             let y = 232. + row as f32 * 28.;
@@ -643,7 +688,13 @@ impl Ui {
                     );
                 }
                 RowValue::Page => {
-                    self.text("ENTER   Rebind keys", 640., y + 18., 17., c(TEAL));
+                    self.text(
+                        &format!("{}   Rebind keys", p.menu(Menu::Confirm)),
+                        640.,
+                        y + 18.,
+                        17.,
+                        c(TEAL),
+                    );
                 }
                 RowValue::Switch(on) => {
                     self.text(
@@ -658,9 +709,21 @@ impl Ui {
         }
         let (_, _, help) = g.settings.row(g.options_row);
         self.center(help, 500., 15., c(MUTED));
-        self.button("ESC   Back", Rect::new(483., 513., 314., 50.));
+        self.button(
+            &format!("{}   Back", p.menu(Menu::Back)),
+            Rect::new(483., 513., 314., 50.),
+        );
         self.center(
-            "W / S  choose      A / D  adjust      M  mute all sound",
+            &format!(
+                "{}  choose      {}  adjust{}",
+                p.menu(Menu::Rows),
+                p.menu(Menu::Adjust),
+                if p.pad() {
+                    ""
+                } else {
+                    "      M  mute all sound"
+                }
+            ),
             584.,
             14.,
             c(MUTED),
@@ -708,10 +771,16 @@ impl Ui {
                 c(PALE),
             );
             self.skin.plaque(Rect::new(x + 90., 515., 150., 40.));
-            self.centered_at(&format!("{}  {verb}", i + 1), x + 165., 541., 17., c(TEAL));
+            self.centered_at(
+                &format!("{}  {verb}", g.prompts().menu(Menu::Choice(i))),
+                x + 165.,
+                541.,
+                17.,
+                c(TEAL),
+            );
         }
     }
-    fn disciplines(&self) {
+    fn disciplines(&self, g: &Game) {
         self.skin.crest(Rect::new(593., 111., 94., 71.));
         self.heading("A memory, made yours", 640., 227., 43.);
         self.center(
@@ -752,7 +821,7 @@ impl Ui {
             self.centered_at(line2, x + 162., 495., 16., c(MUTED));
             self.skin.plaque(Rect::new(x + 95., 512., 134., 38.));
             self.centered_at(
-                &format!("{}  CHOOSE", i + 1),
+                &format!("{}  CHOOSE", g.prompts().menu(Menu::Choice(i))),
                 x + 162.,
                 537.,
                 16.,
@@ -813,7 +882,7 @@ impl Ui {
         {
             let y = 224. + i as f32 * 65.;
             self.skin.panel(Rect::new(222., y, 836., 59.));
-            self.key(&(i + 1).to_string(), 239., y + 18.);
+            self.key(g.prompts().menu(Menu::Choice(i)), 239., y + 18.);
             self.skin.icon(*icon, Rect::new(282., y + 9., 38., 40.), 1.);
             self.text(title, 338., y + 25., 20., c(PALE));
             self.text(detail, 338., y + 45., 14., c(MUTED));
@@ -835,10 +904,13 @@ impl Ui {
             );
         }
         self.center(
-            if g.stage == 0 {
-                "A / D   Choose your next destination"
+            &if g.stage == 0 {
+                format!(
+                    "{}   Choose your next destination",
+                    g.prompts().menu(Menu::Adjust)
+                )
             } else {
-                "The Regent awaits above the clouds."
+                "The Regent awaits above the clouds.".into()
             },
             452.,
             17.,
@@ -860,7 +932,7 @@ impl Ui {
             31.,
         );
         self.button(
-            "ENTER   Continue the descent",
+            &format!("{}   Continue the descent", g.prompts().menu(Menu::Confirm)),
             Rect::new(397., 531., 486., 63.),
         );
         if g.notice_time > 0. {
@@ -917,7 +989,10 @@ impl Ui {
             18.,
             c(MUTED),
         );
-        self.button("ENTER   Rise again", Rect::new(443., 472., 394., 63.));
+        self.button(
+            &format!("{}   Rise again", g.prompts().menu(Menu::Confirm)),
+            Rect::new(443., 472., 394., 63.),
+        );
     }
     fn map_point(g: &Game, rect: Rect, world: Vec2) -> Vec2 {
         let depth = (g.level.max_y - g.level.min_y).max(1.);

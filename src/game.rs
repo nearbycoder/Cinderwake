@@ -1,6 +1,6 @@
 pub use crate::particles::Particle;
 use crate::{
-    controls::{Action, Bindings},
+    controls::{Action, Prompts},
     particles::{self, Effect, VisualRng},
     save::{Checkpoint, Save},
     settings::Settings,
@@ -60,22 +60,32 @@ impl Hint {
     pub fn bit(self) -> u32 {
         1 << self as u32
     }
-    /// The tip, naming the player's current keys.
-    pub fn text(self, keys: &Bindings) -> String {
-        let k = |a| keys.short(a);
+    /// The tip, naming the player's current keys or controller buttons.
+    pub fn text(self, p: &Prompts) -> String {
+        let k = |a| p.action(a);
+        // Mouse alternatives are only worth mentioning to keyboard players.
+        let click = |button: &str| {
+            if p.pad() {
+                String::new()
+            } else {
+                format!(" or {button} click")
+            }
+        };
         match self {
             Self::Climb => format!(
                 "{} jumps. Press it again in the air to double jump onto higher ledges.",
                 k(Action::Jump)
             ),
             Self::Strike => format!(
-                "{} or left click strikes; a combo's second blow staggers guardians. {} dodges their strikes.",
+                "{}{} strikes; a combo's second blow staggers guardians. {} dodges their strikes.",
                 k(Action::Strike),
+                click("left"),
                 k(Action::Dodge)
             ),
             Self::Parry => format!(
-                "Face a bolt and press {} or right click to parry it back at the shooter.",
-                k(Action::Parry)
+                "Face a bolt and press {}{} to parry it back at the shooter.",
+                k(Action::Parry),
+                click("right")
             ),
             Self::Drop => format!(
                 "{} + {} drops through a ledge. Press {} in mid-air to slam down.",
@@ -357,6 +367,8 @@ pub struct Game {
     /// A saved run the title screen offers to continue.
     pub resume: Option<Checkpoint>,
     pub practice: bool,
+    /// Prompts name controller buttons while a controller was used last.
+    pub pad_prompts: bool,
     last_safe_pos: Vec2,
 }
 
@@ -469,6 +481,7 @@ impl Game {
             survey,
             offer: None,
             abandon_armed: false,
+            pad_prompts: false,
             teach: false,
             hint: None,
             pending_hints: 0,
@@ -567,6 +580,9 @@ impl Game {
     }
     /// Pause-screen abandon: the first request arms, the second ends the run
     /// with the same losses as a death.
+    pub fn prompts(&self) -> Prompts<'_> {
+        Prompts::new(&self.settings.keys, self.pad_prompts)
+    }
     pub fn request_abandon(&mut self) {
         if self.screen != Screen::Paused {
             return;
@@ -2437,7 +2453,12 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("Glassbolt moved to SPACE"));
-        assert!(Hint::Climb.text(&g.settings.keys).starts_with("K jumps"));
+        assert!(Hint::Climb.text(&g.prompts()).starts_with("K jumps"));
+        g.pad_prompts = true;
+        assert!(Hint::Climb.text(&g.prompts()).starts_with("A jumps"));
+        assert!(!Hint::Parry.text(&g.prompts()).contains("click"));
+        g.pad_prompts = false;
+        assert!(Hint::Parry.text(&g.prompts()).contains("right click"));
         g.close_controls();
         assert_eq!(g.screen, Screen::Options);
         g.close_options();
@@ -2450,7 +2471,7 @@ mod tests {
         g.screen = Screen::Options;
         g.open_controls();
         g.reset_controls();
-        assert_eq!(g.settings.keys, Bindings::default());
+        assert_eq!(g.settings.keys, crate::controls::Bindings::default());
     }
     #[test]
     fn actions_menus_and_refusals_queue_their_own_cues() {

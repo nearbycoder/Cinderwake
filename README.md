@@ -29,7 +29,7 @@ You are a small brass automaton in a city of copper, glass, and failing machiner
 
 ## What you can play
 
-- **Responsive combat.** Chain melee strikes, reflect projectiles with directional parries, dodge through danger, fire glassbolts, throw fire vessels, and deploy arc snares.
+- **Responsive combat, on keyboard or controller.** Chain melee strikes, reflect projectiles with directional parries, dodge through danger, fire glassbolts, throw fire vessels, and deploy arc snares.
 - **Three elevations to explore.** Double jump into upper galleries, drop through ledges into the undercroft, and find connected routes back to the surface. A two-axis camera and full-height atlas follow the journey.
 - **A branching run.** Four biome themes, three stages per run, four guardian types, and a final fight against the Brass Regent.
 - **Choices that carry weight.** Three melee weapons, weapon tiers and scorching upgrades, three stat disciplines, two run mutations, copper forging, and permanent vitality and flask upgrades.
@@ -74,9 +74,9 @@ cd Cinderwake
 cargo run --release --locked
 ```
 
-Press **Enter** to begin. Tips introduce each move the first time you need it, and **O** opens the options. All runtime art, fonts, shaders, and audio are embedded in the executable; no asset download or external game service is required.
+Press **Enter** (or **A** on a controller) to begin. Tips introduce each move the first time you need it, and **O** opens the options. All runtime art, fonts, shaders, and audio are embedded in the executable; no asset download or external game service is required.
 
-**Verified platforms:** macOS on Apple Silicon, and Linux (CachyOS on Wayland through XWayland, AMD Radeon graphics, with 1.25× display scaling). Windows has not been tested. On other Linux distributions you may need the X11, OpenGL, and ALSA development packages that Macroquad depends on.
+**Verified platforms:** macOS on Apple Silicon, and Linux (CachyOS on Wayland through XWayland, AMD Radeon graphics, with 1.25× display scaling). Windows has not been tested. On other Linux distributions you may need the X11, OpenGL, ALSA, and udev development packages (udev is for controllers).
 
 To build a local macOS app:
 
@@ -102,7 +102,7 @@ It contains the executable, licenses, and a short README. It is for local sharin
 python3 -m http.server -d dist/web 8080   # then open http://localhost:8080
 ```
 
-The browser build is a single WebAssembly file of about 52 MB, because all the art and audio are embedded. Progress, options, and a run in progress are kept in the browser's `localStorage`, so closing the tab mid-run doesn't lose the run. It has been tested only in headless Chrome on Linux, at 1× and 1.25× pixel ratios: the title screen, starting a run, movement, the atlas, pausing, and keeping progress across a reload. Headless Chrome also showed the right music loop starting on the title and when a run begins, but nobody has listened to the browser build. Frame rate, Firefox, Safari, and mobile browsers have not been checked. No hosted version is published.
+The browser build is a single WebAssembly file of about 52 MB, because all the art and audio are embedded. Progress, options, and a run in progress are kept in the browser's `localStorage`, so closing the tab mid-run doesn't lose the run. It has been tested only in headless Chrome on Linux, at 1× and 1.25× pixel ratios: the title screen, starting a run, movement, the atlas, pausing, keeping progress across a reload, and playing and using the menus with a scripted controller through the browser's Gamepad API. Headless Chrome also showed the right music loop starting on the title and when a run begins, but nobody has listened to the browser build. Frame rate, Firefox, Safari, and mobile browsers have not been checked. No hosted version is published.
 
 See [build and verification notes](docs/ENGINE.md#build-and-verification) for more detail.
 
@@ -139,7 +139,7 @@ Move that file aside to reset progression. Options are saved next to it in `sett
 
 ## Controls
 
-These are the default keys. Gameplay keys can be rebound under **O** → **Controls**; the arrow keys and mouse buttons always work as well, and menu keys stay fixed.
+These are the default keys. Gameplay keys can be rebound under **O** → **Controls**; the arrow keys and mouse buttons always work as well, and menu keys stay fixed. Controllers have a fixed layout, [listed below](#with-a-controller).
 
 | Input | Action |
 | --- | --- |
@@ -165,6 +165,24 @@ These are the default keys. Gameplay keys can be rebound under **O** → **Contr
 | **F11** | Fullscreen (remembered on desktop; also on the options page) |
 | **F12** | Save a screenshot to `captures/` |
 
+### With a controller
+
+Buttons use Xbox names; on other pads, **A** is the bottom face button, **B** the right, **X** the left, and **Y** the top. On-screen prompts switch to these buttons whenever the controller was used last, and back to keys when you type.
+
+| Button | In play | In menus |
+| --- | --- | --- |
+| **Left stick** or **D-pad** | Move; push down to drop through a ledge (with **A**) or to slam in mid-air | Move between rows; change a setting; choose a route |
+| **A** | Jump; press again for a double jump | Confirm, start, or continue |
+| **X** | Melee combo; hold to repeat | First choice (memory, reliquary weapon, Keeper upgrade); new descent on the title; abandon run (twice) when paused |
+| **Y** | Interact | Second choice; options on the title and pause screens |
+| **B** | Dodge | Third choice; back; resume when paused |
+| **RB** / **RT** | Parry / fire glassbolt | |
+| **LB** / **LT** | Throw fire vessel / place arc snare | |
+| **D-pad up** | Drink a flask | |
+| **Start** / **View** | Pause / vertical atlas | |
+
+The controller layout can't be changed yet. Controllers work on the desktop through [gilrs](https://gitlab.com/gilrs-project/gilrs) and in the browser build through the Gamepad API. Both were checked with simulated controllers (a virtual Linux device and a scripted browser pad), not with a physical one.
+
 ## Inside the engine
 
 Cinderwake uses a **custom game framework on Macroquad**. Rust owns the fixed-step simulation, platform physics, combat, AI, progression, animation, rendering composition, and tools. Macroquad supplies the window, input, GPU drawing, and audio backends.
@@ -185,7 +203,7 @@ The [engine guide](docs/ENGINE.md) includes the source map, rendering pipeline, 
 
 **A playable prototype under active development.** The core run loop, vertical exploration, combat, progression, and visual systems are implemented. This is an original project inspired by the action-roguelite genre, not a claim of feature parity with Dead Cells.
 
-The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, lighting, tips, and fullscreen; those choices are saved separately from progress. Gameplay keys can be rebound. Gamepad support, broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas fills in as you explore, with the bellgate always marked. See [current boundaries](docs/ENGINE.md#current-boundaries).
+The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, lighting, tips, and fullscreen; those choices are saved separately from progress. Gameplay keys can be rebound. Controllers work with a fixed layout, tested only with simulated devices. Broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas fills in as you explore, with the bellgate always marked. See [current boundaries](docs/ENGINE.md#current-boundaries).
 
 To check a change locally:
 

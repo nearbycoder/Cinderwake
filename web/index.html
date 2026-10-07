@@ -16,11 +16,12 @@
 </head>
 <body>
   <canvas id="glcanvas" tabindex="1"></canvas>
-  <div id="loading">Kindling the city…<small>about 52 MB · keyboard required</small></div>
+  <div id="loading">Kindling the city…<small>about 52 MB · keyboard or controller</small></div>
   <!-- The bundle's unused quad_net plugin assigns this undeclared global in strict mode. -->
   <script>var register_plugin;</script>
   <script src="mq_js_bundle.js"></script>
   <script src="cinderwake-storage.js"></script>
+  <script src="cinderwake-pad.js"></script>
   <script>
     load("cinderwake.wasm");
     // The game draws its first frame once embedded art has been decoded.

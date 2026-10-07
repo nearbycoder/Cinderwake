@@ -20,11 +20,13 @@ Run ./cinderwake from this folder. All art, audio, fonts, and shaders are
 embedded in the executable.
 
 Requirements: glibc ${glibc:-unknown} or newer, OpenGL-capable graphics, an X11 or
-XWayland session, and ALSA (libasound.so.2, usually present). Tested on
+XWayland session, ALSA (libasound.so.2), and libudev.so.1 for controllers; both
+are usually present. Tested on
 CachyOS under Wayland through XWayland with AMD Radeon graphics.
 
 Progress is saved to \$XDG_DATA_HOME/cinderwake/ (usually
-~/.local/share/cinderwake/). Press Escape in game for controls, O for options.
+~/.local/share/cinderwake/). Press Escape (or Start) in game for controls, O for
+options.
 
 Source and documentation: https://github.com/nearbycoder/Cinderwake
 Licenses are in licenses/.
