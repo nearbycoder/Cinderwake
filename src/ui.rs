@@ -32,6 +32,33 @@ fn memory_card(i: usize) -> Rect {
 fn keeper_row(i: usize) -> Rect {
     Rect::new(222., 224. + i as f32 * 65., 836., 59.)
 }
+const OPTIONS_BACK: Rect = Rect::new(483., 513., 314., 50.);
+const CONTROLS_BACK: Rect = Rect::new(483., 516., 314., 46.);
+const CONTROLS_RESET: Rect = Rect::new(500., 446., 280., 30.);
+fn options_row(row: usize) -> Rect {
+    Rect::new(300., 224. + row as f32 * 26., 680., 26.)
+}
+/// One step of an options bar, widened to cover the gaps beside it.
+fn options_segment(row: usize, i: usize) -> Rect {
+    Rect::new(637.5 + i as f32 * 24., 224. + row as f32 * 26., 24., 26.)
+}
+/// The selected bar's < and > arrows.
+fn options_arrow(row: usize, up: bool) -> Rect {
+    Rect::new(
+        if up { 880. } else { 609. },
+        224. + row as f32 * 26.,
+        26.,
+        26.,
+    )
+}
+fn controls_row(i: usize) -> Rect {
+    Rect::new(
+        294. + (i / 6) as f32 * 345.,
+        236. + (i % 6) as f32 * 34.,
+        335.,
+        30.,
+    )
+}
 
 /// What a left click on a menu means.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,9 +71,19 @@ pub enum Click {
     Choice(usize),
     /// Switch the Keeper's route.
     Route,
+    /// Leave the options or controls page.
+    Back,
+    /// An options or controls row. It's selected, and switches, the
+    /// controls row, an action, and the restore row act as Enter would.
+    Row(usize),
+    /// Sets an options bar to a level from 1 to 10.
+    Level(usize, u8),
+    /// Steps the selected options bar down (-1) or up (1).
+    Step(usize, i8),
 }
-/// The menu target under a point in interface coordinates (1280 × 720).
-pub fn click_at(g: &Game, at: Vec2) -> Option<Click> {
+/// Every click target on the current screen, in interface coordinates
+/// (1280 × 720). The first that contains a point wins.
+pub fn targets(g: &Game) -> Vec<(Rect, Click)> {
     let mut targets = vec![];
     match g.screen {
         Screen::Title => targets.push((TITLE_BUTTON, Click::Confirm)),
@@ -63,9 +100,35 @@ pub fn click_at(g: &Game, at: Vec2) -> Option<Click> {
                 targets.push((CAMP_ROUTE, Click::Route));
             }
         }
+        Screen::Options => {
+            let row = g.options_row;
+            if let RowValue::Level(_) = g.settings.row(row).1 {
+                targets.push((options_arrow(row, false), Click::Step(row, -1)));
+                targets.push((options_arrow(row, true), Click::Step(row, 1)));
+            }
+            for row in 0..Settings::ROWS {
+                if let RowValue::Level(_) = g.settings.row(row).1 {
+                    targets.extend(
+                        (0..10).map(|i| (options_segment(row, i), Click::Level(row, i as u8 + 1))),
+                    );
+                }
+                targets.push((options_row(row), Click::Row(row)));
+            }
+            targets.push((OPTIONS_BACK, Click::Back));
+        }
+        Screen::Controls => {
+            let actions = Action::ALL.len();
+            targets.extend((0..actions).map(|i| (controls_row(i), Click::Row(i))));
+            targets.push((CONTROLS_RESET, Click::Row(actions)));
+            targets.push((CONTROLS_BACK, Click::Back));
+        }
         _ => {}
     }
     targets
+}
+/// The menu target under a point in interface coordinates (1280 × 720).
+pub fn click_at(g: &Game, at: Vec2) -> Option<Click> {
+    targets(g)
         .into_iter()
         .find(|(rect, _)| rect.contains(at))
         .map(|(_, click)| click)
@@ -752,10 +815,11 @@ impl Ui {
         self.modal(Rect::new(255., 114., 770., 493.), "Controls", 221.);
         let keys = &g.settings.keys;
         for (i, action) in Action::ALL.iter().enumerate() {
-            let (x, y) = (300. + (i / 6) as f32 * 345., 240. + (i % 6) as f32 * 34.);
+            let row = controls_row(i);
+            let (x, y) = (row.x + 6., row.y + 4.);
             let selected = i == g.controls_row;
             if selected {
-                draw_rectangle(x - 6., y - 4., 335., 30., c(TEAL).with_alpha(0.12));
+                draw_rectangle(row.x, row.y, row.w, row.h, c(TEAL).with_alpha(0.12));
             }
             self.text(
                 action.label(),
@@ -775,7 +839,8 @@ impl Ui {
         }
         let reset = g.controls_row == Action::ALL.len();
         if reset {
-            draw_rectangle(500., 446., 280., 30., c(TEAL).with_alpha(0.12));
+            let r = CONTROLS_RESET;
+            draw_rectangle(r.x, r.y, r.w, r.h, c(TEAL).with_alpha(0.12));
         }
         self.center(
             "Restore default keys",
@@ -788,7 +853,7 @@ impl Ui {
             if p.pad() {
                 "Press the new key on the keyboard now. ESC or B cancels."
             } else {
-                "Press the new key now. ESC cancels."
+                "Press the new key now. ESC or a click cancels."
             }
         } else {
             g.controls_note.as_deref().unwrap_or(
@@ -796,10 +861,7 @@ impl Ui {
             )
         };
         self.center(note, 500., 15., c(MUTED));
-        self.button(
-            &format!("{}   Back", p.menu(Menu::Back)),
-            Rect::new(483., 516., 314., 46.),
-        );
+        self.button(&format!("{}   Back", p.menu(Menu::Back)), CONTROLS_BACK);
         self.center(
             &format!(
                 "{}  choose      {}  rebind or restore",
@@ -819,7 +881,8 @@ impl Ui {
             let selected = row == g.options_row;
             let (label, value, _) = g.settings.row(row);
             if selected {
-                draw_rectangle(300., y - 4., 680., 28., c(TEAL).with_alpha(0.12));
+                let r = options_row(row);
+                draw_rectangle(r.x, r.y, r.w, r.h, c(TEAL).with_alpha(0.12));
                 self.text(">", 312., y + 18., 19., c(TEAL));
             }
             self.text(
@@ -840,9 +903,16 @@ impl Ui {
                         };
                         draw_rectangle(rect.x, rect.y, rect.w, rect.h, color);
                     }
+                    if selected {
+                        // Arrows for stepping with the mouse, down to 0%.
+                        for (up, glyph) in [(false, "<"), (true, ">")] {
+                            let r = options_arrow(row, up);
+                            self.centered_at(glyph, r.x + r.w / 2., y + 18., 19., c(GOLD));
+                        }
+                    }
                     self.text(
                         &format!("{}%", level as u32 * 10),
-                        892.,
+                        914.,
                         y + 18.,
                         17.,
                         c(PALE),
@@ -870,10 +940,7 @@ impl Ui {
         }
         let (_, _, help) = g.settings.row(g.options_row);
         self.center(help, 503., 15., c(MUTED));
-        self.button(
-            &format!("{}   Back", p.menu(Menu::Back)),
-            Rect::new(483., 513., 314., 50.),
-        );
+        self.button(&format!("{}   Back", p.menu(Menu::Back)), OPTIONS_BACK);
         self.center(
             &format!(
                 "{}  choose      {}  adjust{}",

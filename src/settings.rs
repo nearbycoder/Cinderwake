@@ -117,6 +117,13 @@ impl Settings {
             _ => {}
         }
     }
+    /// Sets a level row directly, as a click on its bar does, within the
+    /// same limits as stepping. Other rows are unchanged.
+    pub fn set_level(&mut self, row: usize, level: u8) {
+        if let RowValue::Level(now) = self.row(row).1 {
+            self.adjust(row, level as i32 - now as i32);
+        }
+    }
     /// Label, current value as a 0..=10 level (for gauges) or switch, and help text.
     pub fn row(&self, row: usize) -> (&'static str, RowValue, &'static str) {
         match row {
@@ -239,6 +246,20 @@ mod tests {
         assert_eq!(s.row(8).1, RowValue::Level(5));
         let back: Settings = serde_json::from_slice(&serde_json::to_vec(&s).unwrap()).unwrap();
         assert_eq!(back.speed, 5, "game speed is saved");
+    }
+
+    #[test]
+    fn levels_can_be_set_directly_within_their_limits() {
+        let mut s = Settings::default();
+        s.set_level(0, 3);
+        assert_eq!(s.music, 3);
+        s.set_level(2, 0);
+        assert_eq!(s.shake, 0);
+        s.set_level(8, 2);
+        assert_eq!(s.speed, Settings::SLOWEST, "speed stops at half");
+        let before = s.clone();
+        s.set_level(3, 1);
+        assert_eq!(s, before, "switches aren't levels");
     }
 
     #[test]

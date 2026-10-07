@@ -204,10 +204,40 @@ fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
 
 fn options_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
     use pad::{Button, Dir};
+    use settings::RowValue;
+    use ui::Click;
     let pressed = |list: &[KeyCode]| list.iter().any(|k| (keys.pressed)(*k));
-    if pressed(&[KeyCode::Escape, KeyCode::O]) || pad.pressed(Button::East) {
+    let clicked = keys.click.and_then(|at| ui::click_at(g, at));
+    if pressed(&[KeyCode::Escape, KeyCode::O])
+        || pad.pressed(Button::East)
+        || clicked == Some(Click::Back)
+    {
         g.close_options();
         return;
+    }
+    let before = g.settings.clone();
+    match clicked {
+        Some(Click::Row(row)) => {
+            g.options_row = row;
+            match g.settings.row(row).1 {
+                RowValue::Page => {
+                    g.open_controls();
+                    return;
+                }
+                RowValue::Switch(_) => g.settings.adjust(row, 1),
+                // A bar's name only selects it.
+                RowValue::Level(_) => {}
+            }
+        }
+        Some(Click::Level(row, level)) => {
+            g.options_row = row;
+            g.settings.set_level(row, level);
+        }
+        Some(Click::Step(row, delta)) => g.settings.adjust(row, delta as i32),
+        _ => {}
+    }
+    if g.settings != before {
+        g.sounds.push(Sfx::Select);
     }
     let rows = settings::Settings::ROWS;
     if pressed(&[KeyCode::W, KeyCode::Up]) || pad.nav(Dir::Up) {
@@ -240,10 +270,12 @@ fn options_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
 fn controls_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
     use pad::{Button, Dir};
     let pressed = |list: &[KeyCode]| list.iter().any(|k| (keys.pressed)(*k));
+    let clicked = keys.click.and_then(|at| ui::click_at(g, at));
     if g.rebinding {
         // Checked before Enter below, so the press that began listening is
-        // never captured as the new key.
-        if pressed(&[KeyCode::Escape]) || pad.pressed(Button::East) {
+        // never captured as the new key. Mouse buttons can't be bound, so a
+        // click cancels too.
+        if pressed(&[KeyCode::Escape]) || pad.pressed(Button::East) || keys.click.is_some() {
             g.rebinding = false;
             g.controls_note = None;
         } else if let Some(key) = keys.last {
@@ -251,18 +283,25 @@ fn controls_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
         }
         return;
     }
-    if pressed(&[KeyCode::Escape]) || pad.pressed(Button::East) {
+    if pressed(&[KeyCode::Escape]) || pad.pressed(Button::East) || clicked == Some(ui::Click::Back)
+    {
         g.close_controls();
         return;
     }
     let rows = controls::Action::ALL.len() + 1;
+    if let Some(ui::Click::Row(row)) = clicked {
+        g.controls_row = row;
+    }
     if pressed(&[KeyCode::W, KeyCode::Up]) || pad.nav(Dir::Up) {
         g.controls_row = (g.controls_row + rows - 1) % rows;
     }
     if pressed(&[KeyCode::S, KeyCode::Down]) || pad.nav(Dir::Down) {
         g.controls_row = (g.controls_row + 1) % rows;
     }
-    if pressed(&[KeyCode::Enter, KeyCode::Space]) || pad.pressed(Button::South) {
+    if pressed(&[KeyCode::Enter, KeyCode::Space])
+        || pad.pressed(Button::South)
+        || matches!(clicked, Some(ui::Click::Row(_)))
+    {
         if g.controls_row == controls::Action::ALL.len() {
             g.reset_controls();
         } else {
@@ -1382,6 +1421,82 @@ mod capture_tests {
         g.screen = Screen::Playing;
         click(&mut g, 354., 515.);
         assert_eq!(g.screen, Screen::Playing);
+    }
+
+    /// A point that clicks a target on the current screen: its centre, or the
+    /// first point across it that isn't covered by another target.
+    fn centre(g: &Game, click: ui::Click) -> Vec2 {
+        let (rect, _) = ui::targets(g)
+            .into_iter()
+            .find(|(_, c)| *c == click)
+            .unwrap_or_else(|| panic!("{click:?} isn't on the {:?} screen", g.screen));
+        let y = rect.center().y;
+        std::iter::once(rect.center())
+            .chain((1..20).map(|i| vec2(rect.x + rect.w * i as f32 / 20., y)))
+            .find(|p| ui::click_at(g, *p) == Some(click))
+            .unwrap_or_else(|| panic!("{click:?} is hidden by other targets"))
+    }
+
+    #[test]
+    fn the_mouse_works_the_options_and_controls_pages() {
+        use ui::Click::*;
+        let none = |_: KeyCode| false;
+        let pad = pad::Pad::new();
+        let at = |g: &mut Game, point: Vec2, last: Option<KeyCode>| {
+            let pressed = |k: KeyCode| Some(k) == last;
+            let keys = MenuKeys {
+                pressed: if last.is_some() { &pressed } else { &none },
+                last,
+                click: Some(point).filter(|_| last.is_none()),
+            };
+            menus(g, &keys, &pad);
+        };
+        let click = |g: &mut Game, target: ui::Click| {
+            let point = centre(g, target);
+            at(g, point, None)
+        };
+        let mut g = Game::new(4017, save::Save::default());
+        g.screen = Screen::Paused;
+        g.open_options();
+        // Clicking a bar's name selects it; its bar sets the level.
+        click(&mut g, Row(2));
+        assert_eq!((g.options_row, g.settings.shake), (2, 10));
+        click(&mut g, Level(0, 3));
+        assert_eq!((g.options_row, g.settings.music), (0, 3));
+        assert_eq!(g.sounds.pop(), Some(Sfx::Select));
+        // The selected bar's arrows step it, down to nothing.
+        for _ in 0..4 {
+            click(&mut g, Step(0, -1));
+        }
+        assert_eq!(g.settings.music, 0);
+        click(&mut g, Step(0, 1));
+        assert_eq!(g.settings.music, 1);
+        click(&mut g, Level(8, 1));
+        assert_eq!(g.settings.speed, settings::Settings::SLOWEST);
+        // A switch flips on a click anywhere on its row.
+        click(&mut g, Row(3));
+        assert!(!g.settings.hitstop);
+        click(&mut g, Row(3));
+        assert!(g.settings.hitstop);
+        click(&mut g, Row(settings::Settings::CONTROLS_ROW));
+        assert_eq!(g.screen, Screen::Controls);
+        // A click on an action listens for its key; a key binds it.
+        click(&mut g, Row(2));
+        assert!(g.rebinding && g.controls_row == 2);
+        at(&mut g, Vec2::ZERO, Some(KeyCode::G));
+        assert!(!g.rebinding);
+        assert_eq!(g.settings.keys.label(controls::Action::Jump), "G");
+        // A click while listening cancels; mouse buttons can't be bound.
+        click(&mut g, Row(4));
+        assert!(g.rebinding);
+        at(&mut g, vec2(10., 10.), None);
+        assert!(!g.rebinding);
+        click(&mut g, Row(controls::Action::ALL.len()));
+        assert_eq!(g.settings.keys, controls::Bindings::default());
+        click(&mut g, Back);
+        assert_eq!(g.screen, Screen::Options);
+        click(&mut g, Back);
+        assert_eq!(g.screen, Screen::Paused);
     }
 
     #[test]
