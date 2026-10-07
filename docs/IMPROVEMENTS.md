@@ -422,3 +422,34 @@ Findings for a later round:
 - Miniquad doesn't catch a rejected fullscreen request, so a real refusal logs one uncaught error in the browser's console. Catching it would mean patching the vendored loader.
 
 Still deferred: controller button rebinding (needs a physical controller), new content (14), and a smaller web download (15). Owner decisions still open: one-use continue saves and whether the first biome saves, separate records for slowed runs, web hosting, releases and signing, shrinking the art, the trailer, a physical-controller test, and guardian health.
+
+## Round 8 scope
+
+Five items. Rounds 6 and 7 finished the menus; this round goes back to what a player meets in a fight and every time the game opens. A review for this round found three gaps. A guardian can wind up out of view: archers aim from 300 units across and 200 up or down, the view is 640 × 360, and the HUD panels cover its top and bottom strips, so an archer above or below (or behind a panel) can shoot with no warning at all, and the round-6 tell sound deliberately stays silent for guardians off screen. Low vitality is shown only by the bar turning red in the top-left corner. And the desktop window always opens at 1280 × 720 pixels, a third of the width of a 4K screen, however the player last sized it. The last two items close round-7 findings. Saving, balance, and content stay as they are. Each item gets the usual checks: `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, `cargo test --locked`, the capture modes, and screenshots in [`media/improvements/round8/`](media/improvements/round8/). Every native run uses a temporary `XDG_DATA_HOME`, and the real save folder is checked before and after.
+
+### A. Markers for threats out of view
+
+- **Acceptance:** during play, when a guardian is winding up or a hostile bolt is flying toward the hero outside the part of the view the HUD doesn't cover, a marker at that edge of the play area points toward it. A windup's marker uses the same yellow-to-red colour as its on-screen warning mark; a bolt's is smaller. Markers stay clear of the HUD panels, disappear once the threat is in view, and aren't drawn with the atlas open or on menus. Only threats near enough to matter are marked (a windup always qualifies, since guardians only wind up near the hero). Timing, damage, and the tell sound don't change.
+- **Verify:** unit tests of the marker rule (a threat in view gets none; one above, below, left, or right gets one on that edge, inside the play area; a bolt flying away gets none; a far one gets none); a new `--ui-gallery` fixture with an archer winding up above the view and a bolt arriving from the side; `--motion-capture` still produces every frame.
+
+### B. A warning at low vitality
+
+- **Acceptance:** at 30% vitality or less during play, the screen's edges take a soft red tint that pulses slowly and grows stronger as vitality falls, and, if a flask is left, the flask panel glows with its key. With **Reduce flashes** on, the tint holds steady instead of pulsing. Above 30%, nothing changes. It is drawn with the HUD, so lighting and bloom settings don't hide it.
+- **Verify:** unit tests of the warning level (none above 30%, rising toward 0, steady with reduced flashes, none on menus); the existing low-health fixture (`ui-02`) shows it; a fixture with reduced flashes on matches the rule.
+
+### C. Hints that mention the mouse, and an effects volume preview
+
+- **Acceptance:** when the mouse was used last, the options page's footer says clicks choose and set rows and bars, the controls page's footer says a click on an action rebinds it, and the atlas's footer stays as it is (the atlas is part of play, where a click strikes). With keys or a controller, the footers are unchanged. Changing the effects volume by key, controller, or click plays one short sample effect at the new level (unless muted), so the level can be judged without leaving the page; the music volume is already audible.
+- **Verify:** unit tests that each footer follows the last device and that changing the effects level queues exactly one sample effect (and none when muted or when another row changes); new `--ui-gallery` fixtures for the options and controls pages with the mouse footers.
+
+### D. A browser's fullscreen refusal no longer logs an error
+
+- **Acceptance:** in the browser build, a refused fullscreen request no longer surfaces as an uncaught error in the console. The fix lives in the game's own page (`web/index.html`), not in the vendored loader. Round 7's behaviour stays: the setting turns itself off and the notice shows.
+- **Verify:** in headless Chrome with `requestFullscreen` made to reject: F11, then no uncaught page error, the setting off, and the notice; with the real function, F11 still enters fullscreen.
+
+### E. The desktop window opens at its last size (Linux)
+
+- **Acceptance:** on Linux (X11 and XWayland), resizing the window is remembered in `settings.json`, and the next launch opens at that size. Sizes below 640 × 360 pixels, or a size saved while fullscreen, are ignored. Fullscreen keeps working as before. Practice, capture, and gallery modes neither read nor write it, so their output is unchanged. macOS and Windows keep opening at the default size, because Miniquad measures windows differently there and neither can be checked here.
+- **Verify:** settings tests (round trip, too small, older file without the field); natively, with a temporary `XDG_DATA_HOME`, resize the running window from outside (no `xdotool` or `xwininfo` is installed, so through a short X11 call from Python), quit, check `settings.json`, relaunch, and read the new window's size from a `--snapshot-every` image. If the window can't be resized from outside on this desktop, the check uses a written size only and the report says so.
+
+Not in this round: controller button rebinding (needs a physical controller), new weapons or mutations (a design decision), anything about saving runs or records, a close button for the atlas (the atlas is part of play, where a click strikes, and a mouse-only player can't move anyway), and guardian health. Owner decisions still open: one-use continue saves and whether the first biome saves, separate records for slowed runs, web hosting, releases and signing, shrinking the art, the trailer, a physical-controller test, and guardian health.
