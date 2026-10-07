@@ -263,6 +263,9 @@ pub enum Menu {
     Options,
     NewRun,
     Abandon,
+    /// Quitting the desktop game from the title screen or the pause screen.
+    QuitTitle,
+    QuitPaused,
     /// Moving between rows, changing a value, or picking a route.
     Rows,
     Adjust,
@@ -308,9 +311,9 @@ impl<'a> Prompts<'a> {
         if self.pad {
             match menu {
                 Menu::Confirm => Button::South.label(),
-                Menu::Back => Button::East.label(),
+                Menu::Back | Menu::QuitTitle => Button::East.label(),
                 Menu::Pause => Button::Start.label(),
-                Menu::Atlas => Button::Select.label(),
+                Menu::Atlas | Menu::QuitPaused => Button::Select.label(),
                 Menu::Options => Button::North.label(),
                 Menu::NewRun | Menu::Abandon => Button::West.label(),
                 Menu::Rows => "D-PAD",
@@ -320,11 +323,12 @@ impl<'a> Prompts<'a> {
         } else {
             match menu {
                 Menu::Confirm => "ENTER",
-                Menu::Back | Menu::Pause => "ESC",
+                Menu::Back | Menu::Pause | Menu::QuitTitle => "ESC",
                 Menu::Atlas => "TAB",
                 Menu::Options => "O",
                 Menu::NewRun => "N",
                 Menu::Abandon => "X",
+                Menu::QuitPaused => "Q",
                 Menu::Rows => "W / S",
                 Menu::Adjust => "A / D",
                 Menu::Choice(i) => ["1", "2", "3"][i.min(2)],

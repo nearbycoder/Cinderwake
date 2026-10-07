@@ -13,6 +13,8 @@ const GOLD: u32 = 0xf1d29c;
 const PALE: u32 = 0xe1e7de;
 const MUTED: u32 = 0x98b4b4;
 const TEAL: u32 = 0x85dfcc;
+/// Only the desktop game can close itself; browsers close the tab.
+const QUIT: bool = cfg!(not(target_arch = "wasm32"));
 
 pub struct Ui {
     font: Option<Font>,
@@ -170,17 +172,32 @@ impl Ui {
             15.,
             c(MUTED),
         );
-        self.centered_at(
-            &if p.pad() {
-                format!("{}  Options", p.menu(Menu::Options))
-            } else {
-                format!("{}  Options      M  Mute", p.menu(Menu::Options))
-            },
-            354.,
-            644.,
-            14.,
-            c(MUTED),
-        );
+        if g.quit_armed {
+            self.centered_at(
+                &format!("Press {} again to quit.", p.menu(Menu::QuitTitle)),
+                354.,
+                644.,
+                14.,
+                c(0xef9c81),
+            );
+        } else {
+            self.centered_at(
+                &format!(
+                    "{}  Options{}{}",
+                    p.menu(Menu::Options),
+                    if p.pad() { "" } else { "      M  Mute" },
+                    if QUIT {
+                        format!("      {}  Quit", p.menu(Menu::QuitTitle))
+                    } else {
+                        String::new()
+                    }
+                ),
+                354.,
+                644.,
+                14.,
+                c(MUTED),
+            );
+        }
     }
     fn hud(&self, g: &Game) {
         let p = &g.player;
@@ -559,7 +576,22 @@ impl Ui {
             &format!("{}   Resume the descent", p.menu(Menu::Pause)),
             Rect::new(423., 493., 434., 57.),
         );
-        if g.abandon_armed {
+        if g.quit_armed {
+            self.center(
+                &format!(
+                    "Press {} again to quit. {}",
+                    p.menu(Menu::QuitPaused),
+                    if g.run_is_saved() {
+                        "Continuing later restarts this biome; carried embers are lost."
+                    } else {
+                        "Runs are saved from the second biome on, so this one ends."
+                    }
+                ),
+                577.,
+                15.,
+                c(0xef9c81),
+            );
+        } else if g.abandon_armed {
             self.center(
                 &format!(
                     "Press {} again to abandon this run. Carried embers and equipment will be lost.",
@@ -572,9 +604,14 @@ impl Ui {
         } else {
             self.center(
                 &format!(
-                    "{}  Options      {}  Abandon run{}",
+                    "{}  Options      {}  Abandon run{}{}",
                     p.menu(Menu::Options),
                     p.menu(Menu::Abandon),
+                    if QUIT {
+                        format!("      {}  Quit", p.menu(Menu::QuitPaused))
+                    } else {
+                        String::new()
+                    },
                     match (p.pad(), g.settings.muted) {
                         (true, _) => "",
                         (false, true) => "      M  Sound is muted",

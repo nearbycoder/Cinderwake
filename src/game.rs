@@ -356,6 +356,10 @@ pub struct Game {
     pub offer: Option<Weapon>,
     /// The first abandon request from the pause screen only asks for confirmation.
     pub abandon_armed: bool,
+    /// Desktop quitting from the title or pause screen: the first request
+    /// asks for confirmation, and the second sets `quit`.
+    pub quit_armed: bool,
+    pub quit: bool,
     /// Contextual tips run only in normal play, never in practice or captures.
     pub teach: bool,
     /// The tip on screen and its remaining seconds.
@@ -481,6 +485,8 @@ impl Game {
             survey,
             offer: None,
             abandon_armed: false,
+            quit_armed: false,
+            quit: false,
             pad_prompts: false,
             teach: false,
             hint: None,
@@ -591,10 +597,30 @@ impl Game {
     pub fn prompts(&self) -> Prompts<'_> {
         Prompts::new(&self.settings.keys, self.pad_prompts)
     }
+    /// Asks to close the desktop game. Quitting mid-run is the same as
+    /// closing the window: the run's last checkpoint stays.
+    pub fn request_quit(&mut self) {
+        if !matches!(self.screen, Screen::Title | Screen::Paused) {
+            return;
+        }
+        self.abandon_armed = false;
+        if self.quit_armed {
+            self.quit = true;
+        } else {
+            self.quit_armed = true;
+        }
+    }
+    /// Whether quitting now leaves a run to continue: checkpoints are saved
+    /// on arriving in the second and third biomes and at the Keeper, never
+    /// in the opening biome or in practice.
+    pub fn run_is_saved(&self) -> bool {
+        !self.practice && self.stage > 0
+    }
     pub fn request_abandon(&mut self) {
         if self.screen != Screen::Paused {
             return;
         }
+        self.quit_armed = false;
         if self.abandon_armed {
             self.abandon_armed = false;
             self.player.hp = 0.;
@@ -2433,6 +2459,36 @@ mod tests {
         g.travel();
         assert!(g.survey.fraction() < explored);
         assert!(g.survey.seen(g.level.spawn));
+    }
+    #[test]
+    fn quitting_asks_first_and_only_from_the_title_or_pause() {
+        let mut g = game();
+        g.screen = Screen::Title;
+        g.request_quit();
+        assert!(g.quit_armed && !g.quit);
+        g.request_quit();
+        assert!(g.quit);
+        let mut g = game();
+        g.start();
+        g.request_quit();
+        assert!(!g.quit_armed, "not during play");
+        g.screen = Screen::Paused;
+        g.request_quit();
+        g.request_abandon();
+        assert!(
+            g.abandon_armed && !g.quit_armed,
+            "the other warning replaces it"
+        );
+        g.request_quit();
+        assert!(g.quit_armed && !g.abandon_armed);
+        g.request_quit();
+        assert!(g.quit);
+        assert_eq!(g.screen, Screen::Paused, "the run isn't ended or saved");
+        assert!(!g.run_is_saved(), "practice runs never save");
+        g.practice = false;
+        assert!(!g.run_is_saved(), "the opening biome has no checkpoint");
+        g.travel();
+        assert!(g.run_is_saved());
     }
     #[test]
     fn losing_focus_pauses_only_a_run_in_progress() {

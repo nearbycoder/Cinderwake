@@ -157,6 +157,10 @@ Bindings are stored by key name in `settings.json`. Unknown names fall back to t
 
 From the pause screen, **X** asks for confirmation and a second **X** abandons the run with the same losses as a death.
 
+### Quitting
+
+The desktop game can close itself from the title (**Esc** or **B**) and the pause screen (**Q** or **View**). The first press shows a warning in place of the footer and a second press quits; changing screen or asking to abandon clears the warning. Quitting is the same as closing the window: progress and settings are saved as they change, and nothing extra is written. The pause warning says what continuing will do, because the opening biome has no checkpoint (`Game::run_is_saved`). The browser build doesn't offer quitting. Checked natively: two **B** presses from a virtual controller on the title closed the release build with exit status 0 and left its data folder byte-for-byte unchanged.
+
 ### Pausing on focus loss
 
 When the game loses focus during play, it opens the pause screen (`Game::focus_lost`); other screens are left alone, and capture and staged modes never pause themselves. Macroquad reports focus loss as "minimised": on X11 and XWayland that's the window's FocusOut, and in the browser it's the page losing focus or the tab being hidden. On macOS and native Wayland, Miniquad may report only actual minimising, which hasn't been checked. While the game is out of focus it also ignores controllers, which are otherwise read whatever window is in front, so a pad can't resume the game behind another app. Checked natively on Linux by opening a second game window over the first (the run paused, a pad **Start** press while unfocused was ignored, and **B** resumed after the second window closed) and in headless Chrome by hiding the page through its visibility state.
@@ -217,7 +221,7 @@ Run capture commands from the repository root. Outputs are written beneath `capt
 | `--demo` | Continuous scripted practice play | Runs until closed |
 | `--gallery` | Four staged biome views | `captures/biome-0.png` through `biome-3.png` |
 | `--sprite-preview` | Eight hero animation panels | `captures/animation-preview.png` |
-| `--ui-gallery` | Twenty-three frozen, fixed-seed interface fixtures, including the options and controls pages, abandon confirmation, a tip banner, a reliquary choice, the atlas fog, a HUD with rebound keys, the title with a run to continue, and the HUD, title, Keeper, and memory choice with controller prompts | `captures/ui-*.png` |
+| `--ui-gallery` | Twenty-four frozen, fixed-seed interface fixtures, including the options and controls pages, abandon confirmation, a tip banner, a reliquary choice, the atlas fog, a HUD with rebound keys, the title with a run to continue, and the HUD, title, Keeper, and memory choice with controller prompts, and the quit warning | `captures/ui-*.png` |
 | `--environment-tour` | 24 seconds of camera traversal across all four biomes | 480 PNGs at 20 fps in `captures/tour/` |
 | `--motion-capture` | 15 seconds of scripted input with live physics and combat | 300 PNGs at 20 fps in `captures/motion/` |
 | `--vertical-capture` | A complete fixed-seed Aqueduct route through all elevations | 20 PNGs per simulated second in `captures/vertical/`; about 25 seconds |

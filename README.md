@@ -125,7 +125,7 @@ flowchart LR
 3. **Choose your branch.** Take the Conservatory or the Foundry, then continue to the Crown.
 4. **Defeat the Regent.** The boss unlocks the Crown Rune; the final gate completes the run. A brute and an archer guard the gallery on the way to the Regent. Enemies grow tougher with each stage of a run, and later runs also scale enemy health with recorded victories.
 
-Death resets equipment, run stats, and carried embers. Banked embers, permanent upgrades, the Crown Rune, and victory counts survive. Closing the game partway through doesn't end the run: arriving in each biome and reaching the Keeper save it, and the title screen offers **Enter** to continue from that point or **N** for a new descent. Embers carried since the last bellgate are lost when you continue, as on death. Sealed caches open after eight guardian kills or with the rune on a later run.
+Death resets equipment, run stats, and carried embers. Banked embers, permanent upgrades, the Crown Rune, and victory counts survive. Closing the game partway through doesn't end the run once you've left the Aqueduct: arriving in each later biome and reaching the Keeper save it, and the title screen offers **Enter** to continue from that point or **N** for a new descent. Embers carried since the last bellgate are lost when you continue, as on death. Sealed caches open after eight guardian kills or with the rune on a later run.
 
 Progress is stored in `progress.json` in your per-user data folder:
 
@@ -160,6 +160,7 @@ These are the default keys. Gameplay keys can be rebound under **O** → **Contr
 | **Escape** | Pause and controls (the game also pauses itself when its window or tab loses focus) |
 | **O** | Options, from the title or pause screen |
 | **X** twice | Abandon the run, from the pause screen |
+| **Esc** twice on the title, **Q** twice when paused | Quit the desktop game (a run in progress continues from its last checkpoint, if it has one) |
 | **M** | Mute / unmute |
 | **F9** | Toggle world lighting and bloom |
 | **F11** | Fullscreen (remembered on desktop; also on the options page) |
@@ -175,11 +176,11 @@ Buttons use Xbox names; on other pads, **A** is the bottom face button, **B** th
 | **A** | Jump; press again for a double jump | Confirm, start, or continue |
 | **X** | Melee combo; hold to repeat | First choice (memory, reliquary weapon, Keeper upgrade); new descent on the title; abandon run (twice) when paused |
 | **Y** | Interact | Second choice; options on the title and pause screens |
-| **B** | Dodge | Third choice; back; resume when paused |
+| **B** | Dodge | Third choice; back; resume when paused; quit on the title (twice) |
 | **RB** / **RT** | Parry / fire glassbolt | |
 | **LB** / **LT** | Throw fire vessel / place arc snare | |
 | **D-pad up** | Drink a flask | |
-| **Start** / **View** | Pause / vertical atlas | |
+| **Start** / **View** | Pause / vertical atlas | **View** twice when paused quits the desktop game |
 
 The controller layout can't be changed yet. Controllers work on the desktop through [gilrs](https://gitlab.com/gilrs-project/gilrs) and in the browser build through the Gamepad API. Both were checked with simulated controllers (a virtual Linux device and a scripted browser pad), not with a physical one.
 

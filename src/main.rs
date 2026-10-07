@@ -93,6 +93,16 @@ fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
         g.request_abandon();
         return;
     }
+    // Browsers close the tab instead.
+    let quit = match g.screen {
+        Screen::Title => (keys.pressed)(KeyCode::Escape) || pad.pressed(Button::East),
+        Screen::Paused => (keys.pressed)(KeyCode::Q) || pad.pressed(Button::Select),
+        _ => false,
+    };
+    if quit && cfg!(not(target_arch = "wasm32")) {
+        g.request_quit();
+        return;
+    }
     let pause = (keys.pressed)(KeyCode::Escape) || pad.pressed(Button::Start);
     if pause || (g.screen == Screen::Paused && pad.pressed(Button::East)) {
         g.abandon_armed = false;
@@ -235,7 +245,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 23] = [
+const UI_GALLERY_NAMES: [&str; 24] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -259,6 +269,7 @@ const UI_GALLERY_NAMES: [&str; 23] = [
     "ui-20-pad-title-continue",
     "ui-21-pad-camp",
     "ui-22-pad-memory",
+    "ui-23-paused-quit",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -408,6 +419,10 @@ fn ui_fixture(index: usize) -> Game {
         22 => {
             g.pad_prompts = true;
             g.screen = Screen::Scroll;
+        }
+        23 => {
+            g.screen = Screen::Paused;
+            g.request_quit();
         }
         14 => {
             g.screen = Screen::Reliquary;
@@ -655,6 +670,12 @@ async fn main() {
                 last: get_last_key_pressed(),
             };
             menus(&mut g, &keys, &pad);
+            if g.screen != screen_before_menus {
+                g.quit_armed = false;
+            }
+            if g.quit {
+                break;
+            }
         }
         if screen_before_menus != Screen::Playing || g.screen != Screen::Playing {
             pad.hold_over();
@@ -997,6 +1018,12 @@ mod capture_tests {
         };
         let mut g = Game::new(4017, save::Save::default());
         assert_eq!(g.screen, Screen::Title);
+        press(&mut g, &[East]);
+        assert!(g.quit_armed && !g.quit);
+        press(&mut g, &[East]);
+        assert!(g.quit, "B twice quits from the title");
+        g.quit = false;
+        g.quit_armed = false;
         press(&mut g, &[South]);
         assert_eq!(g.screen, Screen::Playing);
         press(&mut g, &[Select]);
@@ -1024,6 +1051,8 @@ mod capture_tests {
         assert_eq!(g.screen, Screen::Options);
         press(&mut g, &[East]);
         assert_eq!(g.screen, Screen::Paused);
+        press(&mut g, &[Select]);
+        assert!(g.quit_armed, "View asks to quit from the pause screen");
         press(&mut g, &[West]);
         assert!(g.abandon_armed && g.screen == Screen::Paused);
         press(&mut g, &[West]);
