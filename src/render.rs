@@ -252,13 +252,17 @@ pub fn threatens(e: &Enemy) -> Threatens {
     }
 }
 
+/// A windup's warning colour, brightening from gold to red as it nears.
+pub fn warning_colour(progress: f32) -> Color {
+    Color::from_vec(c(0xffd36e).to_vec().lerp(c(0xff5a45).to_vec(), progress))
+}
 /// A windup's warning: a mark over the guardian that brightens to red as
 /// the attack nears, and where the attack will land. Timing is unchanged;
 /// this only makes the existing tell readable.
 fn warning(e: &Enemy, x: f32, hero: Vec2, t: f32) {
     let y = e.pos.y;
     let progress = (1. - e.windup / e.kind.windup()).clamp(0., 1.);
-    let col = Color::from_vec(c(0xffd36e).to_vec().lerp(c(0xff5a45).to_vec(), progress));
+    let col = warning_colour(progress);
     match threatens(e) {
         // Moths fly, so a mark on the ground would mislead; theirs is the mark alone.
         Threatens::Strike { left, right } if e.kind != EnemyKind::Moth => {
@@ -303,11 +307,211 @@ fn warning(e: &Enemy, x: f32, hero: Vec2, t: f32) {
     r(x - 1., top + 7., 2., 2., c(0x100e22));
 }
 
+/// A threat the player can't see: a guardian winding up, or a hostile bolt
+/// flying toward the hero, outside the part of the view the HUD leaves clear.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Marker {
+    /// Where to draw it, in interface coordinates (1280 × 720).
+    pub at: Vec2,
+    /// Unit direction from the hero toward the threat.
+    pub toward: Vec2,
+    /// A windup's progress from 0 to 1, or `None` for a bolt.
+    pub windup: Option<f32>,
+}
+/// The part of the 1280 × 720 interface between the top and bottom HUD
+/// panels (and below the Regent's gauge while it lives).
+pub fn play_area(boss: bool) -> Rect {
+    let top = if boss { 166. } else { 100. };
+    Rect::new(0., top, 1280., 634. - top)
+}
+/// How far inside the play area markers sit.
+const MARKER_INSET: f32 = 26.;
+/// Hostile bolts farther than this, in world units, aren't marked.
+pub const BOLT_RANGE: f32 = 420.;
+/// Markers closer than this share one, the windup's if there is one.
+const MARKER_GAP: f32 = 24.;
+/// Markers at the edge of the play area for each threat out of view, on the
+/// line from the hero toward it. Windups come first, so a windup's marker
+/// wins over a bolt's beside it.
+pub fn threat_markers(g: &Game) -> Vec<Marker> {
+    if g.screen != Screen::Playing || g.map {
+        return vec![];
+    }
+    let boss = g
+        .level
+        .enemies
+        .iter()
+        .any(|e| e.kind == EnemyKind::Regent && e.hp > 0.);
+    let area = play_area(boss);
+    let to_ui = |p: Vec2| (p - vec2(g.camera, g.camera_y)) * 2.;
+    let chest = g.player.pos - vec2(0., 14.);
+    let hero = to_ui(chest);
+    let windups = g
+        .level
+        .enemies
+        .iter()
+        .filter(|e| e.hp > 0. && e.windup > 0.)
+        .map(|e| {
+            let progress = (1. - e.windup / e.kind.windup()).clamp(0., 1.);
+            (to_ui(e.rect().center()), Some(progress))
+        });
+    let bolts = g
+        .shots
+        .iter()
+        .filter(|s| {
+            let to_hero = chest - s.pos;
+            s.hostile
+                && to_hero.length() < BOLT_RANGE
+                && s.vel.normalize_or_zero().dot(to_hero.normalize_or_zero()) > 0.7
+        })
+        .map(|s| (to_ui(s.pos), None));
+    let inset = Rect::new(
+        area.x + MARKER_INSET,
+        area.y + MARKER_INSET,
+        area.w - MARKER_INSET * 2.,
+        area.h - MARKER_INSET * 2.,
+    );
+    let mut markers: Vec<Marker> = vec![];
+    for (at, windup) in windups.chain(bolts) {
+        if area.contains(at) {
+            continue;
+        }
+        let marker = Marker {
+            at: edge_point(inset, hero, at),
+            toward: (at - hero).normalize_or_zero(),
+            windup,
+        };
+        if markers
+            .iter()
+            .all(|m| m.at.distance(marker.at) >= MARKER_GAP)
+        {
+            markers.push(marker);
+        }
+    }
+    markers
+}
+/// Where the line from `from` toward `to` leaves `rect`, kept inside it.
+fn edge_point(rect: Rect, from: Vec2, to: Vec2) -> Vec2 {
+    let d = to - from;
+    let mut s = 1f32;
+    for (d, from, low, high) in [
+        (d.x, from.x, rect.x, rect.right()),
+        (d.y, from.y, rect.y, rect.bottom()),
+    ] {
+        if d > 0. {
+            s = s.min((high - from) / d);
+        } else if d < 0. {
+            s = s.min((low - from) / d);
+        }
+    }
+    let p = from + d * s.max(0.);
+    vec2(
+        p.x.clamp(rect.x, rect.right()),
+        p.y.clamp(rect.y, rect.bottom()),
+    )
+}
+
 pub use crate::ui::Ui;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn playing() -> Game {
+        let mut g = Game::new(42, crate::save::Save::default());
+        g.practice = true;
+        g.screen = Screen::Playing;
+        g.level.enemies.clear();
+        g.place_player(vec2(900., FLOOR));
+        g
+    }
+    /// A guardian partway through its windup, `at` world units from the camera's corner.
+    fn winding(g: &mut Game, kind: EnemyKind, at: Vec2) {
+        let mut e = Enemy::new(g.camera + at.x, g.camera_y + at.y, kind, Threat::BASE);
+        e.windup = kind.windup() * 0.5;
+        g.level.enemies.push(e);
+    }
+    fn bolt(g: &mut Game, at: Vec2, vel: Vec2) {
+        g.shots.push(Shot {
+            pos: vec2(g.camera, g.camera_y) + at,
+            vel,
+            life: 3.,
+            damage: 10.,
+            hostile: true,
+            kind: 2,
+            from: Some(EnemyKind::Archer),
+        });
+    }
+
+    #[test]
+    fn only_threats_out_of_view_get_markers_on_their_edge() {
+        let mut g = playing();
+        winding(&mut g, EnemyKind::Warden, vec2(300., 250.));
+        assert!(threat_markers(&g).is_empty(), "a windup in view needs none");
+        let area = play_area(false);
+        let inset = 26.;
+        // Above the view, below it, left, right, and above but behind the
+        // top HUD panels, which the camera shows but the player can't see.
+        for (at, edge) in [
+            (vec2(230., -60.), "top"),
+            (vec2(230., 420.), "bottom"),
+            (vec2(-40., 200.), "left"),
+            (vec2(700., 200.), "right"),
+            (vec2(230., 40.), "top"),
+        ] {
+            let mut g = playing();
+            winding(&mut g, EnemyKind::Archer, at);
+            let markers = threat_markers(&g);
+            assert_eq!(markers.len(), 1, "{at}");
+            let m = markers[0];
+            assert!(area.contains(m.at), "{at}: inside the play area");
+            let expected = match edge {
+                "top" => (m.at.y - (area.y + inset)).abs() < 0.01 && m.toward.y < 0.,
+                "bottom" => (m.at.y - (area.bottom() - inset)).abs() < 0.01 && m.toward.y > 0.,
+                "left" => (m.at.x - inset).abs() < 0.01 && m.toward.x < 0.,
+                _ => (m.at.x - (1280. - inset)).abs() < 0.01 && m.toward.x > 0.,
+            };
+            assert!(expected, "{at} should be marked on the {edge} edge: {m:?}");
+            assert_eq!(m.windup, Some(0.5));
+        }
+    }
+
+    #[test]
+    fn bolts_are_marked_only_while_arriving_from_near() {
+        let hero = |g: &Game| g.player.pos - vec2(g.camera, g.camera_y);
+        let mut g = playing();
+        g.camera = g.player.pos.x - 320.;
+        let from = vec2(650., hero(&g).y - 14.);
+        bolt(&mut g, from, vec2(-170., 0.));
+        let markers = threat_markers(&g);
+        assert_eq!(markers.len(), 1);
+        assert_eq!(markers[0].windup, None);
+        assert!(markers[0].toward.x > 0.99, "it comes from the right");
+        g.shots[0].vel = vec2(170., 0.);
+        assert!(threat_markers(&g).is_empty(), "flying away");
+        g.shots[0].vel = vec2(-170., 0.);
+        g.shots[0].pos.x = g.player.pos.x + BOLT_RANGE + 10.;
+        assert!(threat_markers(&g).is_empty(), "too far to matter yet");
+        g.shots[0].pos.x = g.player.pos.x + 200.;
+        g.shots[0].hostile = false;
+        assert!(threat_markers(&g).is_empty(), "the hero's own bolt");
+    }
+
+    #[test]
+    fn markers_show_only_in_play_and_merge_when_close() {
+        let mut g = playing();
+        winding(&mut g, EnemyKind::Archer, vec2(230., -60.));
+        // A bolt just beside it shares its marker; a windup's wins.
+        bolt(&mut g, vec2(232., -50.), vec2(0., 170.));
+        let markers = threat_markers(&g);
+        assert_eq!(markers.len(), 1);
+        assert!(markers[0].windup.is_some());
+        g.map = true;
+        assert!(threat_markers(&g).is_empty(), "not over the atlas");
+        g.map = false;
+        g.screen = Screen::Paused;
+        assert!(threat_markers(&g).is_empty(), "not on menus");
+    }
 
     #[test]
     fn warnings_show_exactly_where_strikes_land() {

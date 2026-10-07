@@ -620,6 +620,35 @@ impl Ui {
             }
         }
     }
+    /// A threat out of view: a disc on the play area's edge with an arrow
+    /// toward it, and the windup's "!" in its warning colour.
+    fn threat_marker(&self, m: &crate::render::Marker, t: f32, steady: bool) {
+        let (radius, col) = match m.windup {
+            Some(progress) => (13., crate::render::warning_colour(progress)),
+            None => (8., c(0xff8a5c)),
+        };
+        let pulse = if steady {
+            0.5
+        } else {
+            (t * 9.).sin() * 0.5 + 0.5
+        };
+        let at = m.at;
+        draw_circle(at.x, at.y, radius + 5. + 4. * pulse, col.with_alpha(0.16));
+        draw_circle(at.x, at.y, radius, INK.with_alpha(0.88));
+        draw_circle_lines(at.x, at.y, radius, 2., col);
+        let side = vec2(-m.toward.y, m.toward.x) * (radius * 0.5);
+        let base = at + m.toward * (radius + 1.);
+        draw_triangle(
+            base + m.toward * radius * 0.75,
+            base + side,
+            base - side,
+            col,
+        );
+        if m.windup.is_some() {
+            draw_rectangle(at.x - 1.5, at.y - 7., 3., 8., col);
+            draw_rectangle(at.x - 1.5, at.y + 3., 3., 3., col);
+        }
+    }
     pub fn draw(&self, g: &Game) {
         let over_title = matches!(g.screen, Screen::Options | Screen::Controls)
             && g.options_from == Screen::Title;
@@ -660,6 +689,9 @@ impl Ui {
                 16.,
                 c(PALE).with_alpha(opacity),
             );
+        }
+        for marker in crate::render::threat_markers(g) {
+            self.threat_marker(&marker, g.time, g.settings.reduce_flashes);
         }
         if g.screen == Screen::Playing && !g.map {
             if let Some((hint, _)) = g.hint {

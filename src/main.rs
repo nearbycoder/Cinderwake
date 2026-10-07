@@ -438,7 +438,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 31] = [
+const UI_GALLERY_NAMES: [&str; 32] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -470,6 +470,7 @@ const UI_GALLERY_NAMES: [&str; 31] = [
     "ui-28-hover-reliquary-card",
     "ui-29-hover-options-arrow",
     "ui-30-hover-title-confirm-quit",
+    "ui-31-threats-out-of-view",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -724,6 +725,34 @@ fn ui_fixture(index: usize) -> Game {
             g.screen = Screen::Title;
             g.request_quit();
             g.pointer = Some(vec2(494., 639.));
+        }
+        31 => {
+            // An archer winding up above the view, a brute behind the left
+            // edge, and a bolt arriving from above on the right.
+            g.level.enemies.clear();
+            for (pos, kind, left) in [
+                (vec2(960., g.camera_y - 30.), world::EnemyKind::Archer, 0.35),
+                (
+                    vec2(g.camera - 30., world::FLOOR),
+                    world::EnemyKind::Brute,
+                    0.8,
+                ),
+            ] {
+                let mut e = world::Enemy::new(pos.x, pos.y, kind, world::Threat::BASE);
+                e.windup = kind.windup() * left;
+                g.level.enemies.push(e);
+            }
+            let from = g.player.pos + vec2(300., -274.);
+            g.shots.push(Shot {
+                pos: from,
+                vel: (g.player.pos - vec2(0., 14.) - from).normalize() * 170.,
+                life: 3.,
+                damage: 10.,
+                hostile: true,
+                kind: 2,
+                from: Some(world::EnemyKind::Archer),
+            });
+            g.hint = None;
         }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
