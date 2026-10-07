@@ -267,3 +267,35 @@ Findings for a later round:
 - While `scripts/virtual-pad.py` runs, every program on the machine that reads controllers sees its device. The scripts here lasted under 40 seconds each.
 
 Still deferred: new content (14) and a smaller web download (15). Owner decisions still open: one-use continue saves (and with it, whether the first biome saves), web hosting, releases and signing, shrinking the art, the trailer, and guardian health.
+
+## Round 5 scope
+
+Four items. They were chosen for what a player meets in every session, and each one can be checked on this machine. A review of the code for this round found two small defects that shaped the list: the death and victory screens accept **Enter** or the controller's **A** the instant they open, so a player still pressing jump as the hero falls skips straight into a new run; and the desktop window still carries Miniquad's default logo as its icon, because the game never set its own. Each item gets the usual checks: `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, `cargo test --locked`, the capture modes, and screenshots in [`media/improvements/round5/`](media/improvements/round5/). Every native run uses a temporary `XDG_DATA_HOME`, and the real save folder is checked before and after.
+
+### A. A recap at the end of every run
+
+At the moment the death screen says only how many guardians fell, the time, and the banked embers. It doesn't say what killed you, how far you got, or whether you did better than before.
+
+- **Acceptance:** the death and victory screens show what ended the run (the kind of guardian, the Regent, a hazard, or abandoning), where (biome and stage), the build (weapon and tier, the three memories, the mutation), the embers lost or banked, and personal records: most guardians felled (already saved), deepest stage reached, and fastest victory. A record broken by this run is marked as new. The title screen shows the fastest victory once there is one. The new records are extra fields in `progress.json` that older files simply lack; checkpoint saving is unchanged. Practice runs never change records. Both screens ignore **Enter** and **A** for their first second, so a button held or mashed as the run ends doesn't skip the recap. The pause screen gains one line with the run's stage, weapon, tier, and mutation, which play never shows.
+- **Verify:** game tests that each damage source (warden, archer, moth, brute, Regent strike and bolt, hazard, abandoning) is named as the cause; that records update once, only when beaten, and never in practice; that an older `progress.json` still loads; and that confirming is ignored for the first second. New `--ui-gallery` fixtures for the death recap, the victory recap with new records, and the pause line. The browser build reaches the death screen with real keys and shows the recap.
+
+### B. A game-speed option
+
+Guardians telegraph and strike within a fraction of a second, and parries need precise timing. There's no way to slow the game down for players who need more time to react.
+
+- **Acceptance:** an options row, **Game speed**, from 100% down to 50% in 10% steps, saved with the other settings. It slows the whole simulation evenly (movement, enemies, projectiles, timers), so nothing gets easier or harder except the time available to react. Menus, music, and crossfades run at normal speed. The pause screen and the run recap show the speed when it's below 100%. Capture, gallery, and practice modes ignore it. Recorded times use simulated seconds, so a slower speed doesn't shorten a fastest-victory record.
+- **Verify:** settings tests (default, clamping, round trip, an older file without the field); a unit test that the main loop's simulated time per real second scales with the setting; the options gallery fixture with the new row; in the browser build with real keys, set 50% and measure the run timer against the wall clock.
+
+### C. The game's own window icon
+
+- **Acceptance:** the desktop window uses the Cinderwake crest as its icon at 16, 32, and 64 pixels, in place of Miniquad's logo, on Linux (X11 and XWayland), Windows, and macOS when run outside the app bundle. On Linux the window also reports `cinderwake` as its class, which desktops use to match windows to launchers.
+- **Verify:** a unit test that the icon images have the sizes Miniquad expects and aren't blank; natively on XWayland, read the window's `_NET_WM_ICON` and `WM_CLASS` with `xprop` and render the icon data to an image. Windows and macOS can't be checked here.
+
+### D. Browser shortcuts that fight the game
+
+Miniquad's browser loader blocks the browser's default action for Space, the arrows, Tab, and F1–F10, but not **F11**, so pressing it toggles the browser's fullscreen and the game's at once (a round 3 finding).
+
+- **Acceptance:** in the browser build, **F11** is handled only by the game. No other keys change behaviour. The README and ENGINE.md describe it.
+- **Verify:** in headless Chrome with real key events through the DevTools protocol, check that the F11 key event's default action is prevented and that the game's own fullscreen toggle still runs. Whether a desktop browser's window chrome behaves can't be seen in headless mode, and the report will say so.
+
+Not in this round: controller button rebinding (round 4 found it needs a physical controller to check), more Keeper mutations or weapons (new content changes the Keeper's three-choice layout and needs a design decision and playtesting), and anything to do with saving the opening biome. Owner decisions still open: one-use continue saves and whether the first biome saves, web hosting, releases and signing, shrinking the art, the trailer, a physical-controller test, and guardian health.
