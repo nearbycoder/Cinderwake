@@ -369,3 +369,34 @@ Findings for a later round:
 - Miniquad's loader logs that the `cinderwake_pad` plugin is "not used in the rust code", because the pad plugin has no version export. It's harmless and predates this round.
 
 Still deferred: controller button rebinding (needs a physical controller), new content (14), and a smaller web download (15). Owner decisions still open: one-use continue saves and whether the first biome saves, separate records for slowed runs, web hosting, releases and signing, shrinking the art, the trailer, a physical-controller test, and guardian health.
+
+## Round 7 scope
+
+Five items. Round 6 made the mouse choose buttons and cards, but a mouse player still has to reach for the keyboard for the options and controls pages, for opening options, abandoning, quitting, muting, or starting a new descent, and nothing on screen reacts to the cursor. The first four items finish that, so the game can be played from the title to the end of a run with a mouse alone. The fifth closes two small browser findings from round 6. Saving, balance, and content stay as they are. Each item gets the usual checks: `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, `cargo test --locked`, the capture modes, and screenshots in [`media/improvements/round7/`](media/improvements/round7/). Every native run uses a temporary `XDG_DATA_HOME`, and the real save folder is checked before and after.
+
+### A. Options and controls pages with the mouse
+
+- **Acceptance:** on the options page, a click on a switch row flips it, a click on the **Controls** row opens the controls page, a click on a volume, shake, or speed bar sets that level, and small **<** and **>** arrows beside the selected bar step it down and up (so 0% and the speed limit can be reached). Clicking a row's name selects it. **Back** is a button. On the controls page, a click on an action starts listening for its new key (as **Enter** does), a click on **Restore default keys** restores them, a click while listening cancels (mouse buttons can't be bound), and **Back** closes the page. Keyboard and controller behaviour doesn't change.
+- **Verify:** unit tests that click the centre of every target through the same menu code the game runs; the options and controls fixtures in `--ui-gallery`; in headless Chrome with real mouse events, set a volume, flip a switch, rebind a key, and go back, with the saved settings checked afterwards.
+
+### B. Title and pause actions with the mouse
+
+- **Acceptance:** the footer lines on the title (new descent, options, mute, quit) and the pause screen (options, abandon, quit, mute) become click targets in fixed slots, still showing their keys. The confirmations stay clickable: the first click on **Abandon run** or **Quit** turns that link into **Confirm abandon** or **Confirm quit** and shows the warning above it, and a second click does it. **New descent** moves from the continue line into the title's footer. The browser build still offers no quitting. Keyboard and controller behaviour doesn't change.
+- **Verify:** unit tests clicking every link, including both confirmations and new descent; updated title, pause, abandon, and quit fixtures; in headless Chrome, abandon a run and open options from pause using only clicks.
+
+### C. Buttons and rows that answer the cursor
+
+- **Acceptance:** while the mouse is in use, the button, card, row, or link under it is highlighted, and the cursor becomes a hand over anything clickable. Moving the mouse over an options or controls row selects it, so its help line shows. A key press or controller input hides the highlight until the mouse moves again, so a still cursor never fights the keyboard's selection. Highlights come from the same rectangles as the clicks, so they can't drift apart.
+- **Verify:** a unit test that hovering finds the same targets clicking does and that a key press clears it; a test that moving over a row selects it and a still pointer doesn't; new `--ui-gallery` fixtures with the pointer over a button, a card, and an options arrow; in headless Chrome, the canvas cursor style reads `pointer` over a button and `default` off it.
+
+### D. No cursor over the game in play
+
+- **Acceptance:** the mouse cursor is hidden while a run is being played (including the atlas) and shown on every menu, so it doesn't sit over the action. Leaving play by pausing, dying, or any menu brings it back at once.
+- **Verify:** a unit test of the rule for each screen; in headless Chrome, the canvas cursor style reads `none` in play and returns on the pause screen. The desktop cursor can't be observed here without moving the shared desktop's pointer, so it is checked only through the same code path.
+
+### E. Browser fullscreen refusals and a loader warning
+
+- **Acceptance:** in the browser build, if the page asks for fullscreen and the browser hasn't entered it a second later (it refused, as browsers can), the setting turns itself off, is saved, and a short notice says the browser didn't allow it. Miniquad's loader no longer logs that the `cinderwake_pad` plugin is "not used in the rust code". Desktop behaviour is unchanged.
+- **Verify:** a unit test of the refusal rule; in headless Chrome, `canvas.requestFullscreen` replaced with one that rejects, then F11: the setting reads off afterwards and the notice shows; the console has no plugin warning.
+
+Not in this round: controller button rebinding (needs a physical controller), new weapons or mutations (a design decision), anything about saving or records, and guardian health. Owner decisions still open: one-use continue saves and whether the first biome saves, separate records for slowed runs, web hosting, releases and signing, shrinking the art, the trailer, a physical-controller test, and guardian health.
