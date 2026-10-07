@@ -411,6 +411,29 @@ fn edge_point(rect: Rect, from: Vec2, to: Vec2) -> Vec2 {
     )
 }
 
+/// Vitality at or below this share of the maximum warns the player.
+pub const LOW_VITALITY: f32 = 0.3;
+/// How strongly to warn about low vitality in play (atlas included), from 0
+/// above `LOW_VITALITY` through about a third at it, to 1 at none.
+pub fn low_vitality(g: &Game) -> f32 {
+    let p = &g.player;
+    let share = p.hp / p.max_hp;
+    if g.screen != Screen::Playing || p.hp <= 0. || share > LOW_VITALITY {
+        return 0.;
+    }
+    0.35 + 0.65 * (1. - share / LOW_VITALITY)
+}
+/// The warning tint's opacity at the screen's edge: it pulses about once a
+/// second, or holds steady when flashes are reduced.
+pub fn low_vitality_tint(level: f32, t: f32, steady: bool) -> f32 {
+    let pulse = if steady {
+        0.75
+    } else {
+        0.55 + 0.45 * (t * std::f32::consts::TAU * 1.1).sin().abs()
+    };
+    0.5 * level * pulse
+}
+
 pub use crate::ui::Ui;
 
 #[cfg(test)]
@@ -511,6 +534,48 @@ mod tests {
         g.map = false;
         g.screen = Screen::Paused;
         assert!(threat_markers(&g).is_empty(), "not on menus");
+    }
+
+    #[test]
+    fn low_vitality_warns_below_thirty_percent_and_only_in_play() {
+        let mut g = playing();
+        let max = g.player.max_hp;
+        g.player.hp = max * 0.31;
+        assert_eq!(low_vitality(&g), 0.);
+        g.player.hp = max * 0.3;
+        assert!((low_vitality(&g) - 0.35).abs() < 1e-4);
+        g.player.hp = max * 0.15;
+        let half = low_vitality(&g);
+        g.player.hp = max * 0.01;
+        assert!(
+            half > 0.35 && low_vitality(&g) > half,
+            "stronger as it falls"
+        );
+        g.map = true;
+        assert!(
+            low_vitality(&g) > 0.,
+            "the world keeps going behind the atlas"
+        );
+        for screen in [Screen::Paused, Screen::Dead, Screen::Options, Screen::Camp] {
+            g.screen = screen;
+            assert_eq!(low_vitality(&g), 0., "{screen:?}");
+        }
+        g.screen = Screen::Playing;
+        g.player.hp = 0.;
+        assert_eq!(low_vitality(&g), 0., "not once the run has ended");
+        // It pulses, unless flashes are reduced; then it holds steady.
+        let tints: Vec<f32> = (0..20)
+            .map(|i| low_vitality_tint(1., i as f32 * 0.05, false))
+            .collect();
+        let (low, high) = tints
+            .iter()
+            .fold((1f32, 0f32), |(l, h), t| (l.min(*t), h.max(*t)));
+        assert!(high - low > 0.1, "pulses: {low}..{high}");
+        let steady: Vec<f32> = (0..20)
+            .map(|i| low_vitality_tint(1., i as f32 * 0.05, true))
+            .collect();
+        assert!(steady.windows(2).all(|w| w[0] == w[1]));
+        assert_eq!(low_vitality_tint(0., 0.3, false), 0.);
     }
 
     #[test]

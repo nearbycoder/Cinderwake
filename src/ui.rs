@@ -550,6 +550,30 @@ impl Ui {
             );
         }
         self.skin.panel(Rect::new(824., 638., 190., 72.));
+        // At low vitality the flask's slot glows while one is left.
+        if crate::render::low_vitality(g) > 0. && p.flasks > 0 && p.heal_time <= 0. {
+            let pulse = if g.settings.reduce_flashes {
+                0.6
+            } else {
+                0.4 + 0.6 * (g.time * std::f32::consts::TAU * 1.1).sin().abs()
+            };
+            let slot = Rect::new(834., 646., 48., 52.);
+            draw_rectangle(
+                slot.x,
+                slot.y,
+                slot.w,
+                slot.h,
+                c(TEAL).with_alpha(0.16 * pulse),
+            );
+            draw_rectangle_lines(
+                slot.x,
+                slot.y,
+                slot.w,
+                slot.h,
+                2.,
+                c(TEAL).with_alpha(0.8 * pulse),
+            );
+        }
         self.skin.icon(
             6,
             Rect::new(838., 649., 40., 44.),
@@ -620,6 +644,25 @@ impl Ui {
             }
         }
     }
+    /// Low vitality: a red tint from the screen's edges, drawn under the HUD.
+    fn low_vitality(&self, g: &Game) {
+        let level = crate::render::low_vitality(g);
+        if level <= 0. {
+            return;
+        }
+        let edge = crate::render::low_vitality_tint(level, g.time, g.settings.reduce_flashes);
+        let red = c(0xb0232c);
+        // Twelve bands, each fading toward the centre.
+        for i in 0..12 {
+            let d = i as f32 * 9.;
+            let a = edge * (1. - i as f32 / 12.).powf(1.6);
+            let col = red.with_alpha(a);
+            draw_rectangle(d, d, 1280. - 2. * d, 9., col);
+            draw_rectangle(d, 711. - d, 1280. - 2. * d, 9., col);
+            draw_rectangle(d, d + 9., 9., 702. - 2. * d, col);
+            draw_rectangle(1271. - d, d + 9., 9., 702. - 2. * d, col);
+        }
+    }
     /// A threat out of view: a disc on the play area's edge with an arrow
     /// toward it, and the windup's "!" in its warning colour.
     fn threat_marker(&self, m: &crate::render::Marker, t: f32, steady: bool) {
@@ -665,6 +708,7 @@ impl Ui {
             self.hover(g);
             return;
         }
+        self.low_vitality(g);
         self.hud(g);
         let boss = g
             .level

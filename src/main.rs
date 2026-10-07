@@ -438,7 +438,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 32] = [
+const UI_GALLERY_NAMES: [&str; 33] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -471,6 +471,7 @@ const UI_GALLERY_NAMES: [&str; 32] = [
     "ui-29-hover-options-arrow",
     "ui-30-hover-title-confirm-quit",
     "ui-31-threats-out-of-view",
+    "ui-32-low-vitality-steady",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -753,6 +754,12 @@ fn ui_fixture(index: usize) -> Game {
                 from: Some(world::EnemyKind::Archer),
             });
             g.hint = None;
+        }
+        // Low vitality with a flask left, and flashes reduced so the tint holds steady.
+        32 => {
+            g.player.hp = 30.;
+            g.player.flasks = 2;
+            g.settings.reduce_flashes = true;
         }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
