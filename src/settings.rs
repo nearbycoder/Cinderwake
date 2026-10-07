@@ -24,6 +24,8 @@ pub struct Settings {
     pub keys: Bindings,
     /// Simulation speed in play, in tenths: 5 (half speed) to 10.
     pub speed: u8,
+    /// The desktop window's last size in pixels, restored at launch on Linux.
+    pub window: Option<[u32; 2]>,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -40,6 +42,7 @@ impl Default for Settings {
             hints_seen: 0,
             keys: Bindings::default(),
             speed: 10,
+            window: None,
         }
     }
 }
@@ -63,7 +66,15 @@ impl Settings {
             *level = (*level).min(10);
         }
         self.speed = self.speed.clamp(Self::SLOWEST, 10);
+        self.window = self.window.filter(|size| Self::window_fits(*size));
         self
+    }
+    /// The window opens at 1280 × 720 pixels unless another size was saved.
+    pub const DEFAULT_WINDOW: [u32; 2] = [1280, 720];
+    /// Whether a window size is worth keeping: at least the world's own
+    /// 640 × 360, and no larger than any screen.
+    pub fn window_fits([w, h]: [u32; 2]) -> bool {
+        (640..=16384).contains(&w) && (360..=16384).contains(&h)
     }
     pub fn music_gain(&self) -> f32 {
         if self.muted {
@@ -281,7 +292,28 @@ mod tests {
         assert_eq!(s.speed, Settings::SLOWEST);
         let mut s = Settings::default();
         s.adjust(1, -3);
+        s.window = Some([1920, 1080]);
         let back: Settings = serde_json::from_slice(&serde_json::to_vec(&s).unwrap()).unwrap();
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn only_sensible_window_sizes_are_kept() {
+        let size = |json: &str| {
+            serde_json::from_str::<Settings>(json)
+                .unwrap()
+                .sanitized()
+                .window
+        };
+        assert_eq!(size("{}"), None, "files from before window sizes");
+        assert_eq!(size("{\"window\":[1600,900]}"), Some([1600, 900]));
+        assert_eq!(size("{\"window\":[640,360]}"), Some([640, 360]));
+        for small_or_huge in ["[639,720]", "[1280,359]", "[0,0]", "[20000,900]"] {
+            assert_eq!(
+                size(&format!("{{\"window\":{small_or_huge}}}")),
+                None,
+                "{small_or_huge}"
+            );
+        }
     }
 }

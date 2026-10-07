@@ -21,11 +21,79 @@ mod ui_skin;
 mod world;
 use game::*;
 use macroquad::prelude::*;
+/// Launch flags that keep the run apart from saved progress and settings.
+const ISOLATING_FLAGS: [&str; 9] = [
+    "--capture",
+    "--gallery",
+    "--sprite-preview",
+    "--ui-gallery",
+    "--environment-tour",
+    "--motion-capture",
+    "--vertical-capture",
+    "--demo",
+    "--start-at",
+];
+fn isolated(args: &[String]) -> bool {
+    args.iter().any(|a| ISOLATING_FLAGS.contains(&a.as_str()))
+}
+/// Whether this build remembers the window's size. Miniquad measures the
+/// window in pixels on Linux (X11 and XWayland); macOS and Windows measure
+/// it differently and haven't been checked, so they keep the default.
+const REMEMBER_WINDOW: bool = cfg!(target_os = "linux");
+/// The window size saved in the settings, read before the window opens. A
+/// damaged file is left for the game's usual check once it starts.
+fn saved_window() -> Option<[u32; 2]> {
+    if !REMEMBER_WINDOW || isolated(&std::env::args().collect::<Vec<_>>()) {
+        return None;
+    }
+    let bytes = storage::read(settings::Settings::FILE)?;
+    serde_json::from_slice::<settings::Settings>(&bytes)
+        .ok()?
+        .window
+        .filter(|size| settings::Settings::window_fits(*size))
+}
+/// Seconds a new window size must hold before it's saved, so dragging a
+/// window's edge writes once rather than every frame.
+const WINDOW_SETTLE: f32 = 1.;
+/// Watches the window's size so it can be saved once it settles.
+#[derive(Default)]
+struct WindowWatch {
+    size: Option<[u32; 2]>,
+    still: f32,
+}
+impl WindowWatch {
+    /// `size` is the window in pixels. Returns a size to save when it has
+    /// held for `WINDOW_SETTLE` seconds and differs from `saved`. Fullscreen
+    /// sizes are never saved, and leaving fullscreen starts the wait again.
+    fn watch(
+        &mut self,
+        size: [u32; 2],
+        fullscreen: bool,
+        dt: f32,
+        saved: Option<[u32; 2]>,
+    ) -> Option<[u32; 2]> {
+        if fullscreen || !settings::Settings::window_fits(size) {
+            self.size = None;
+            return None;
+        }
+        if self.size != Some(size) {
+            self.size = Some(size);
+            self.still = 0.;
+            return None;
+        }
+        let before = self.still;
+        self.still += dt;
+        let settled = before < WINDOW_SETTLE && self.still >= WINDOW_SETTLE;
+        (settled && saved.unwrap_or(settings::Settings::DEFAULT_WINDOW) != size).then_some(size)
+    }
+}
 fn conf() -> Conf {
+    let [window_width, window_height] =
+        saved_window().unwrap_or(settings::Settings::DEFAULT_WINDOW);
     Conf {
         window_title: "Cinderwake — A Clockwork Roguelite".into(),
-        window_width: 1280,
-        window_height: 720,
+        window_width: window_width as i32,
+        window_height: window_height as i32,
         high_dpi: true,
         window_resizable: true,
         // Browsers ignore the icon, so the build there skips decoding it.
@@ -898,7 +966,11 @@ async fn main() {
             std::process::exit(2)
         })
     };
-    let practice = demo || staged || sprite_preview || start_at.is_some();
+    let practice = isolated(&args) || start_at.is_some();
+    debug_assert_eq!(
+        practice,
+        demo || staged || sprite_preview || start_at.is_some()
+    );
     let seed = if practice {
         4017
     } else {
@@ -948,6 +1020,7 @@ async fn main() {
     // Browsers only allow fullscreen after a key press, so only desktop
     // builds restore a saved choice at launch.
     let mut fullscreen = false;
+    let mut window_watch = WindowWatch::default();
     #[cfg(target_arch = "wasm32")]
     let mut browser_fullscreen = false;
     // Seconds since the browser build asked for fullscreen, until it enters.
@@ -1098,6 +1171,18 @@ async fn main() {
                 #[cfg(target_arch = "wasm32")]
                 {
                     fullscreen_wait = fullscreen.then_some(0.);
+                }
+            }
+            if REMEMBER_WINDOW && !practice {
+                let (w, h) = miniquad::window::screen_size();
+                if let Some(size) = window_watch.watch(
+                    [w as u32, h as u32],
+                    fullscreen,
+                    get_frame_time(),
+                    g.settings.window,
+                ) {
+                    g.settings.window = Some(size);
+                    g.persist_settings();
                 }
             }
         }
@@ -1814,6 +1899,52 @@ mod capture_tests {
         };
         follow_devices(&mut g, pad, button);
         assert!(g.pointer.is_none() && g.pad_prompts);
+    }
+
+    #[test]
+    fn a_settled_window_size_is_saved_once() {
+        let mut watch = WindowWatch::default();
+        let frames = |watch: &mut WindowWatch, size, fullscreen, saved, seconds: f32| {
+            (0..(seconds * 60.) as usize)
+                .filter_map(|_| watch.watch(size, fullscreen, 1. / 60., saved))
+                .collect::<Vec<_>>()
+        };
+        let default = Some(settings::Settings::DEFAULT_WINDOW);
+        assert!(
+            frames(&mut watch, [1280, 720], false, None, 3.).is_empty(),
+            "the default isn't written"
+        );
+        // Dragging an edge: each new size starts the wait again.
+        for w in (1300..1600).step_by(20) {
+            assert!(frames(&mut watch, [w, 900], false, default, 0.25).is_empty());
+        }
+        assert_eq!(
+            frames(&mut watch, [1600, 900], false, default, 3.),
+            vec![[1600, 900]]
+        );
+        assert!(frames(&mut watch, [1600, 900], false, Some([1600, 900]), 3.).is_empty());
+        // Fullscreen is never saved; leaving it waits for the window to settle.
+        let saved = Some([1600, 900]);
+        assert!(frames(&mut watch, [3840, 2160], true, saved, 3.).is_empty());
+        assert!(frames(&mut watch, [3840, 2160], false, saved, 0.1).is_empty());
+        assert!(
+            frames(&mut watch, [1600, 900], false, saved, 3.).is_empty(),
+            "back to the saved size"
+        );
+        assert!(
+            frames(&mut watch, [500, 300], false, saved, 3.).is_empty(),
+            "too small to keep"
+        );
+    }
+
+    #[test]
+    fn isolating_flags_match_the_practice_modes() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(!isolated(&args(&["cinderwake"])));
+        assert!(!isolated(&args(&["cinderwake", "--snapshot-every", "1"])));
+        for flag in ISOLATING_FLAGS {
+            assert!(isolated(&args(&["cinderwake", flag])), "{flag}");
+        }
     }
 
     #[test]
