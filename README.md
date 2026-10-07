@@ -147,7 +147,7 @@ These are the default keys. Gameplay keys can be rebound under **O** → **Contr
 | **Space / W / ↑** | Jump; press again for a double jump |
 | **S / ↓ + Space** on a ledge | Drop through that ledge |
 | **S / ↓** while falling | Ground slam |
-| **J** or **left mouse** | Melee combo; hold to repeat |
+| **J** or **left mouse** | Melee combo; hold to repeat. In menus, a left click chooses a button or card |
 | **K** | Fire glassbolt |
 | **Shift** | Dodge with brief invulnerability |
 | **L** or **right mouse** | Directional parry; reflect projectiles |

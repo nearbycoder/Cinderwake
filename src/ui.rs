@@ -16,6 +16,61 @@ const TEAL: u32 = 0x85dfcc;
 /// Only the desktop game can close itself; browsers close the tab.
 const QUIT: bool = cfg!(not(target_arch = "wasm32"));
 
+// Menu areas a mouse click can choose. Drawing uses the same rectangles.
+const TITLE_BUTTON: Rect = Rect::new(145., 483., 418., 64.);
+const PAUSE_BUTTON: Rect = Rect::new(423., 493., 434., 57.);
+const RESULT_BUTTON: Rect = Rect::new(443., 572., 394., 63.);
+const CAMP_BUTTON: Rect = Rect::new(397., 531., 486., 63.);
+/// The Keeper's destination line; a click switches the route.
+const CAMP_ROUTE: Rect = Rect::new(360., 462., 600., 44.);
+fn reliquary_card(i: usize) -> Rect {
+    Rect::new(290. + i as f32 * 370., 300., 330., 280.)
+}
+fn memory_card(i: usize) -> Rect {
+    Rect::new(128. + i as f32 * 350., 300., 324., 267.)
+}
+fn keeper_row(i: usize) -> Rect {
+    Rect::new(222., 224. + i as f32 * 65., 836., 59.)
+}
+
+/// What a left click on a menu means.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Click {
+    /// The screen's main button: begin, continue, rise again, or travel.
+    Confirm,
+    /// Resume from the pause screen.
+    Resume,
+    /// A numbered card or row.
+    Choice(usize),
+    /// Switch the Keeper's route.
+    Route,
+}
+/// The menu target under a point in interface coordinates (1280 × 720).
+pub fn click_at(g: &Game, at: Vec2) -> Option<Click> {
+    let mut targets = vec![];
+    match g.screen {
+        Screen::Title => targets.push((TITLE_BUTTON, Click::Confirm)),
+        Screen::Paused => targets.push((PAUSE_BUTTON, Click::Resume)),
+        Screen::Dead | Screen::Victory if g.result_ready() => {
+            targets.push((RESULT_BUTTON, Click::Confirm))
+        }
+        Screen::Reliquary => targets.extend((0..2).map(|i| (reliquary_card(i), Click::Choice(i)))),
+        Screen::Scroll => targets.extend((0..3).map(|i| (memory_card(i), Click::Choice(i)))),
+        Screen::Camp => {
+            targets.extend((0..3).map(|i| (keeper_row(i), Click::Choice(i))));
+            targets.push((CAMP_BUTTON, Click::Confirm));
+            if g.stage == 0 {
+                targets.push((CAMP_ROUTE, Click::Route));
+            }
+        }
+        _ => {}
+    }
+    targets
+        .into_iter()
+        .find(|(rect, _)| rect.contains(at))
+        .map(|(_, click)| click)
+}
+
 pub struct Ui {
     font: Option<Font>,
     skin: Skin,
@@ -133,7 +188,7 @@ impl Ui {
         if let Some(run) = &g.resume {
             self.button(
                 &format!("{}   Continue the descent", p.menu(Menu::Confirm)),
-                Rect::new(145., 483., 418., 64.),
+                TITLE_BUTTON,
             );
             self.centered_at(
                 &format!(
@@ -155,7 +210,7 @@ impl Ui {
         } else {
             self.button(
                 &format!("{}   Begin the descent", p.menu(Menu::Confirm)),
-                Rect::new(145., 483., 418., 64.),
+                TITLE_BUTTON,
             );
             self.centered_at(&record, 354., 579., 16., c(TEAL));
         }
@@ -643,7 +698,7 @@ impl Ui {
         }
         self.button(
             &format!("{}   Resume the descent", p.menu(Menu::Pause)),
-            Rect::new(423., 493., 434., 57.),
+            PAUSE_BUTTON,
         );
         if g.quit_armed {
             self.center(
@@ -853,13 +908,13 @@ impl Ui {
             .into_iter()
             .enumerate()
         {
-            let x = 290. + i as f32 * 370.;
+            let x = reliquary_card(i).x;
             let icon = match weapon {
                 Weapon::Sabre => 0,
                 Weapon::Glaive => 1,
                 Weapon::Hammer => 2,
             };
-            self.skin.panel(Rect::new(x, 300., 330., 280.));
+            self.skin.panel(reliquary_card(i));
             self.skin
                 .icon(icon, Rect::new(x + 128., 320., 74., 74.), 1.);
             self.centered_at(weapon.name(), x + 165., 424., 21., c(GOLD));
@@ -918,8 +973,8 @@ impl Ui {
         .iter()
         .enumerate()
         {
-            let x = 128. + i as f32 * 350.;
-            self.skin.panel(Rect::new(x, 300., 324., 267.));
+            let x = memory_card(i).x;
+            self.skin.panel(memory_card(i));
             self.skin
                 .icon(10 + i, Rect::new(x + 125., 323., 74., 74.), 1.);
             self.heading(name, x + 162., 435., 35.);
@@ -986,8 +1041,8 @@ impl Ui {
         .iter()
         .enumerate()
         {
-            let y = 224. + i as f32 * 65.;
-            self.skin.panel(Rect::new(222., y, 836., 59.));
+            let y = keeper_row(i).y;
+            self.skin.panel(keeper_row(i));
             self.key(g.prompts().menu(Menu::Choice(i)), 239., y + 18.);
             self.skin.icon(*icon, Rect::new(282., y + 9., 38., 40.), 1.);
             self.text(title, 338., y + 25., 20., c(PALE));
@@ -1039,7 +1094,7 @@ impl Ui {
         );
         self.button(
             &format!("{}   Continue the descent", g.prompts().menu(Menu::Confirm)),
-            Rect::new(397., 531., 486., 63.),
+            CAMP_BUTTON,
         );
         if g.notice_time > 0. {
             self.center(&g.notice, 520., 15., c(TEAL));
@@ -1199,7 +1254,7 @@ impl Ui {
         if g.result_ready() {
             self.button(
                 &format!("{}   Rise again", g.prompts().menu(Menu::Confirm)),
-                Rect::new(443., 572., 394., 63.),
+                RESULT_BUTTON,
             );
         }
     }

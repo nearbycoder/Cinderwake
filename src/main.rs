@@ -41,13 +41,15 @@ fn conf() -> Conf {
         ..Default::default()
     }
 }
-fn read_input(g: &Game) -> Input {
+/// `mouse_strike` is false while a click that chose something in a menu is
+/// still held, so it doesn't also strike once play resumes.
+fn read_input(g: &Game, mouse_strike: bool) -> Input {
     controls::gather(
         &g.settings.keys,
         &controls::KeyState {
             down: &|k| is_key_down(k),
             pressed: &|k| is_key_pressed(k),
-            mouse_strike: is_mouse_button_down(MouseButton::Left),
+            mouse_strike: mouse_strike && is_mouse_button_down(MouseButton::Left),
             mouse_parry: is_mouse_button_pressed(MouseButton::Right),
         },
     )
@@ -75,6 +77,13 @@ impl miniquad::EventHandler for FocusWatch {
 struct MenuKeys<'a> {
     pressed: &'a dyn Fn(KeyCode) -> bool,
     last: Option<KeyCode>,
+    /// A left click this frame, in interface coordinates.
+    click: Option<Vec2>,
+}
+/// A window point in interface coordinates (1280 × 720), given the
+/// letterboxed frame in the same logical units as the mouse.
+fn to_interface(frame: Rect, at: Vec2) -> Vec2 {
+    (at - frame.point()) * 1280. / frame.w
 }
 fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
     use pad::{Button, Dir};
@@ -90,6 +99,7 @@ fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
         controls_menu(g, keys, pad);
         return;
     }
+    let clicked = keys.click.and_then(|at| ui::click_at(g, at));
     if ((keys.pressed)(KeyCode::Tab) || pad.pressed(Button::Select)) && g.screen == Screen::Playing
     {
         g.map = !g.map;
@@ -115,7 +125,10 @@ fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
         return;
     }
     let pause = (keys.pressed)(KeyCode::Escape) || pad.pressed(Button::Start);
-    if pause || (g.screen == Screen::Paused && pad.pressed(Button::East)) {
+    if pause
+        || (g.screen == Screen::Paused && pad.pressed(Button::East))
+        || clicked == Some(ui::Click::Resume)
+    {
         g.abandon_armed = false;
         g.screen = if g.screen == Screen::Playing {
             Screen::Paused
@@ -125,11 +138,14 @@ fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
             g.screen
         };
     }
-    let confirm = (keys.pressed)(KeyCode::Enter) || pad.pressed(Button::South);
-    // A numbered choice: 1 / 2 / 3, or X / Y / B on a controller.
+    let confirm = (keys.pressed)(KeyCode::Enter)
+        || pad.pressed(Button::South)
+        || clicked == Some(ui::Click::Confirm);
+    // A numbered choice: 1 / 2 / 3, X / Y / B on a controller, or a click.
     let choice = |i: usize| {
         (keys.pressed)([KeyCode::Key1, KeyCode::Key2, KeyCode::Key3][i])
             || pad.pressed(controls::CHOICE_BUTTONS[i])
+            || clicked == Some(ui::Click::Choice(i))
     };
     match g.screen {
         Screen::Title if g.resume.is_some() => {
@@ -171,6 +187,9 @@ fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
             }
             if (keys.pressed)(KeyCode::D) || (keys.pressed)(KeyCode::Right) || pad.nav(Dir::Right) {
                 g.route = 1;
+            }
+            if clicked == Some(ui::Click::Route) {
+                g.route = 1 - g.route;
             }
             if g.route != route {
                 g.sounds.push(Sfx::Select);
@@ -724,6 +743,7 @@ async fn main() {
         set_fullscreen(true);
     }
     let mut pad = pad::Pad::new();
+    let mut mouse_held_over = false;
     let focus_events = macroquad::input::utils::register_input_subscriber();
     let mut focused = true;
     let mut previous_level = (g.level.seed, g.level.biome, g.seed);
@@ -785,9 +805,12 @@ async fn main() {
                 g.pad_prompts = false;
             }
             let pressed = |k| is_key_pressed(k);
+            let (frame, _) = letterbox(screen_width(), screen_height(), screen_dpi_scale());
             let keys = MenuKeys {
                 pressed: &pressed,
                 last: get_last_key_pressed(),
+                click: is_mouse_button_pressed(MouseButton::Left)
+                    .then(|| to_interface(frame, mouse_position().into())),
             };
             menus(&mut g, &keys, &pad);
             if g.screen != screen_before_menus {
@@ -799,6 +822,12 @@ async fn main() {
         }
         if screen_before_menus != Screen::Playing || g.screen != Screen::Playing {
             pad.hold_over();
+            if is_mouse_button_pressed(MouseButton::Left) {
+                mouse_held_over = true;
+            }
+        }
+        if !is_mouse_button_down(MouseButton::Left) {
+            mouse_held_over = false;
         }
         if !staged && !automated {
             if is_key_pressed(KeyCode::F11) {
@@ -840,7 +869,7 @@ async fn main() {
         let mut input = if staged {
             Input::default()
         } else {
-            pad::combine(read_input(&g), pad.gameplay())
+            pad::combine(read_input(&g, !mouse_held_over), pad.gameplay())
         };
         if vertical_capture && !staged {
             input = traversal.input(&g);
@@ -1217,6 +1246,7 @@ mod capture_tests {
         let keys = MenuKeys {
             pressed: &none,
             last: None,
+            click: None,
         };
         let mut pad = pad::Pad::new();
         // One frame with the buttons down, then one with them released.
@@ -1288,6 +1318,80 @@ mod capture_tests {
             (g.screen, g.level.biome),
             (Screen::Playing, world::Biome::Foundry)
         );
+    }
+
+    #[test]
+    fn mouse_clicks_choose_in_menus() {
+        let none = |_: KeyCode| false;
+        let pad = pad::Pad::new();
+        let click = |g: &mut Game, x: f32, y: f32| {
+            let keys = MenuKeys {
+                pressed: &none,
+                last: None,
+                click: Some(vec2(x, y)),
+            };
+            menus(g, &keys, &pad);
+        };
+        let mut g = Game::new(4017, save::Save::default());
+        click(&mut g, 900., 300.);
+        assert_eq!(
+            g.screen,
+            Screen::Title,
+            "a click off the button does nothing"
+        );
+        click(&mut g, 354., 515.);
+        assert_eq!(g.screen, Screen::Playing, "the title's button begins");
+        g.screen = Screen::Paused;
+        click(&mut g, 640., 300.);
+        assert_eq!(g.screen, Screen::Paused);
+        click(&mut g, 640., 520.);
+        assert_eq!(g.screen, Screen::Playing, "the pause button resumes");
+        g.screen = Screen::Scroll;
+        click(&mut g, 640., 400.);
+        assert_eq!((g.screen, g.player.power), (Screen::Playing, [1, 2, 1]));
+        g.screen = Screen::Reliquary;
+        g.offer = Some(Weapon::Hammer);
+        click(&mut g, 825., 400.);
+        assert_eq!(
+            (g.screen, g.player.weapon),
+            (Screen::Playing, Weapon::Sabre),
+            "the right card keeps the weapon"
+        );
+        g.screen = Screen::Camp;
+        g.save.embers = 100;
+        click(&mut g, 640., 250.);
+        assert_eq!(g.save.vitality, 1, "the first row buys vitality");
+        g.route = 0;
+        click(&mut g, 661., 485.);
+        assert_eq!(g.route, 1, "the destination switches");
+        click(&mut g, 640., 560.);
+        assert_eq!(
+            (g.screen, g.level.biome),
+            (Screen::Playing, world::Biome::Foundry)
+        );
+        g.screen = Screen::Paused;
+        g.request_abandon();
+        g.request_abandon();
+        assert_eq!(g.screen, Screen::Dead);
+        click(&mut g, 640., 600.);
+        assert_eq!(g.screen, Screen::Dead, "the recap holds for a second");
+        g.result_time = game::RESULT_DELAY;
+        click(&mut g, 640., 600.);
+        assert_eq!(g.screen, Screen::Playing);
+        // A click in play is a strike, not a menu choice.
+        g.screen = Screen::Playing;
+        click(&mut g, 354., 515.);
+        assert_eq!(g.screen, Screen::Playing);
+    }
+
+    #[test]
+    fn clicks_map_through_the_letterbox() {
+        // A 1500 x 700 window pillarboxes a 1244.4 x 700 frame.
+        let (frame, _) = letterbox(1500., 700., 1.25);
+        let centre = to_interface(frame, vec2(750., 350.));
+        assert!((centre - vec2(640., 360.)).length() < 0.01);
+        let corner = to_interface(frame, vec2(frame.x, frame.y + frame.h));
+        assert!((corner - vec2(0., 720.)).length() < 0.01);
     }
 
     #[test]
