@@ -318,3 +318,34 @@ Findings for a later round:
 - Miniquad's browser loader also blocks F5 (reload) while the game has focus. That was already true and was left alone.
 
 Still deferred: controller button rebinding (needs a physical controller), new content (14), and a smaller web download (15). Owner decisions still open: one-use continue saves and whether the first biome saves, web hosting, releases and signing, shrinking the art, the trailer, a physical-controller test, and guardian health.
+
+## Round 6 scope
+
+Four items, plus one stretch item. A review of the code for this round found that a damaged `progress.json` is silently replaced: `Save::load` falls back to default progress and `Game::start` writes it straight back, so one bad write (a full disk, a crash mid-copy, a hand edit) loses every banked ember, upgrade, and victory without a word. It also found that a guardian's only warning before it strikes is a 2 × 4 pixel mark above its head, with no sound, which matters more now that the game-speed option exists for players who need time to react. Each item gets the usual checks: `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, `cargo test --locked`, the capture modes, and screenshots in [`media/improvements/round6/`](media/improvements/round6/). Every native run uses a temporary `XDG_DATA_HOME`, and the real save folder is checked before and after.
+
+### A. Keep a save the game can't read
+
+- **Acceptance:** if `progress.json` or `settings.json` exists but can't be read, the game copies its bytes to `progress.unreadable.json` (or `settings.unreadable.json`) before anything can overwrite it, then carries on with defaults as now. An existing copy is never overwritten, so a second failure can't destroy the first. The title screen says what happened and names the file. The browser build does the same under its `cinderwake/` keys. Practice and capture modes still read nothing. Files that read correctly behave exactly as before.
+- **Verify:** unit tests (through the in-memory test storage) for a damaged progress file and settings file: the copy is made once, the damaged bytes survive starting a run, and a good file makes no copy; a `--ui-gallery` fixture for the title notice; a native release run with a damaged file in a temporary `XDG_DATA_HOME` (both files checked afterwards); in headless Chrome, damaged `localStorage` produces the copy and the notice.
+
+### B. Clearer warnings before a guardian strikes
+
+- **Acceptance:** while a warden, brute, archer, or the Regent winds up, a larger pulsing warning mark shows above it, and the ground shows how far the strike will reach (wardens and brutes, and the Regent's lunge); an archer shows a faint line along its aim. The reach shown comes from the same numbers the hit test uses, so it can't drift. A short, new synthesized "tell" sound plays when a guardian that's on screen starts winding up, at most once every 0.2 s; the effects volume and mute apply. Timing, damage, and every other number stay the same; only what the player can see and hear changes.
+- **Verify:** game tests that a windup queues exactly one tell, that off-screen guardians stay silent, and that the throttle holds; a test that the drawn reach matches the hit test's range; a new `--ui-gallery` fixture with guardians winding up; the synthesis script's clipping check and a spectrogram of the new cue; `--motion-capture` still produces every frame. Nobody will listen to the cue here.
+
+### C. Pause when a controller disconnects
+
+- **Acceptance:** if a controller is removed during play, the run pauses and the pause screen says the controller was disconnected; reconnecting doesn't unpause on its own. Other screens and capture modes are unaffected. Desktop (gilrs) and browser (Gamepad API) both do this.
+- **Verify:** a unit test of the rule; natively, `scripts/virtual-pad.py` starts a run with a virtual controller and then removes it, and a snapshot shows the paused run; in headless Chrome, a scripted pad that disappears does the same.
+
+### D. The browser's fullscreen state stays in step
+
+- **Acceptance:** in the browser build, leaving fullscreen through the browser (its **Esc**) updates the game's fullscreen setting, so the next **F11** enters fullscreen again on the first press and the options row shows the true state. Desktop behaviour is unchanged.
+- **Verify:** in headless Chrome with DevTools key events: F11 enters fullscreen, leaving through the page's own `document.exitFullscreen()` (what the browser's Esc does) turns the setting off, and one F11 press re-enters. A desktop browser's window chrome can't be seen in headless mode.
+
+### E. Stretch: click menus with the mouse
+
+- **Acceptance:** the title's begin and continue buttons, the death and victory buttons, the memory, reliquary, and Keeper choice cards, and the Keeper's routes respond to a left click; a click that closes a menu doesn't also strike. Ships only if A–D are done.
+- **Verify:** unit tests of the hit areas against the drawn layout; real mouse clicks in headless Chrome.
+
+Not in this round: controller button rebinding (needs a physical controller), more Keeper mutations or weapons (a design decision), and anything about how runs are saved or recorded (one-use continues, the first biome, separate records for slowed runs). Owner decisions still open: those saving questions, web hosting, releases and signing, shrinking the art, the trailer, a physical-controller test, and guardian health.
