@@ -13,6 +13,8 @@ const GOLD: u32 = 0xf1d29c;
 const PALE: u32 = 0xe1e7de;
 const MUTED: u32 = 0x98b4b4;
 const TEAL: u32 = 0x85dfcc;
+/// Warnings: confirmations, refusals, and a lost controller.
+const WARN: u32 = 0xef9c81;
 /// Only the desktop game can close itself; browsers close the tab.
 const QUIT: bool = cfg!(not(target_arch = "wasm32"));
 
@@ -80,11 +82,57 @@ pub enum Click {
     Level(usize, u8),
     /// Steps the selected options bar down (-1) or up (1).
     Step(usize, i8),
+    /// Footer links on the title and pause screens.
+    Options,
+    NewRun,
+    Abandon,
+    Quit,
+    Mute,
+}
+/// Footer links on the title and pause screens, in fixed-width slots so a
+/// click target never depends on measuring text.
+fn links(g: &Game) -> Vec<(Rect, Click)> {
+    let pad = g.prompts().pad();
+    let mut items = vec![];
+    let (cx, y, width) = match g.screen {
+        Screen::Title => {
+            if g.resume.is_some() {
+                items.push(Click::NewRun);
+            }
+            items.push(Click::Options);
+            (354., 627., 140.)
+        }
+        Screen::Paused => {
+            items.extend([Click::Options, Click::Abandon]);
+            (640., 560., 170.)
+        }
+        _ => return vec![],
+    };
+    // Controllers have no mute button.
+    if !pad {
+        items.push(Click::Mute);
+    }
+    if QUIT {
+        // Quit last on the title, before mute when paused, as before.
+        let at = if g.screen == Screen::Paused && !pad {
+            items.len() - 1
+        } else {
+            items.len()
+        };
+        items.insert(at, Click::Quit);
+    }
+    let left = cx - width * items.len() as f32 / 2.;
+    items
+        .into_iter()
+        .enumerate()
+        .map(|(i, click)| (Rect::new(left + width * i as f32, y, width, 24.), click))
+        .collect()
 }
 /// Every click target on the current screen, in interface coordinates
 /// (1280 × 720). The first that contains a point wins.
 pub fn targets(g: &Game) -> Vec<(Rect, Click)> {
     let mut targets = vec![];
+    targets.extend(links(g));
     match g.screen {
         Screen::Title => targets.push((TITLE_BUTTON, Click::Confirm)),
         Screen::Paused => targets.push((PAUSE_BUTTON, Click::Resume)),
@@ -255,14 +303,13 @@ impl Ui {
             );
             self.centered_at(
                 &format!(
-                    "{}  /  {}   {}  New descent",
+                    "{}  /  {}",
                     run.biome.name(),
                     if run.at_keeper {
                         "AT THE KEEPER".to_string()
                     } else {
                         format!("STAGE {} OF 3", run.stage + 1)
                     },
-                    p.menu(Menu::NewRun)
                 ),
                 354.,
                 574.,
@@ -277,48 +324,73 @@ impl Ui {
             );
             self.centered_at(&record, 354., 579., 16., c(TEAL));
         }
-        self.centered_at(
-            &{
-                let k = |a| p.action(a);
-                format!(
-                    "{}  Move   {}  Jump   {}  Strike   {}  Dodge   {}  Parry",
-                    p.movement(),
-                    k(Action::Jump),
-                    k(Action::Strike),
-                    k(Action::Dodge),
-                    k(Action::Parry)
-                )
-            },
-            354.,
-            618.,
-            15.,
-            c(MUTED),
-        );
-        self.unreadable_notice(g);
         if g.quit_armed {
             self.centered_at(
                 &format!("Press {} again to quit.", p.menu(Menu::QuitTitle)),
                 354.,
-                644.,
-                14.,
-                c(0xef9c81),
+                618.,
+                15.,
+                c(WARN),
             );
         } else {
             self.centered_at(
-                &format!(
-                    "{}  Options{}{}",
-                    p.menu(Menu::Options),
-                    if p.pad() { "" } else { "      M  Mute" },
-                    if QUIT {
-                        format!("      {}  Quit", p.menu(Menu::QuitTitle))
-                    } else {
-                        String::new()
-                    }
-                ),
+                &{
+                    let k = |a| p.action(a);
+                    format!(
+                        "{}  Move   {}  Jump   {}  Strike   {}  Dodge   {}  Parry",
+                        p.movement(),
+                        k(Action::Jump),
+                        k(Action::Strike),
+                        k(Action::Dodge),
+                        k(Action::Parry)
+                    )
+                },
                 354.,
-                644.,
-                14.,
+                618.,
+                15.,
                 c(MUTED),
+            );
+        }
+        self.links(g, 14.);
+        self.unreadable_notice(g);
+    }
+    /// The footer links, each centred in its slot.
+    fn links(&self, g: &Game, size: f32) {
+        let p = g.prompts();
+        for (rect, click) in links(g) {
+            let (key, label, armed) = match click {
+                Click::NewRun => (p.menu(Menu::NewRun), "New descent", false),
+                Click::Options => (p.menu(Menu::Options), "Options", false),
+                Click::Abandon if g.abandon_armed => {
+                    (p.menu(Menu::Abandon), "Confirm abandon", true)
+                }
+                Click::Abandon => (p.menu(Menu::Abandon), "Abandon run", false),
+                Click::Quit => {
+                    let key = if g.screen == Screen::Title {
+                        p.menu(Menu::QuitTitle)
+                    } else {
+                        p.menu(Menu::QuitPaused)
+                    };
+                    if g.quit_armed {
+                        (key, "Confirm quit", true)
+                    } else {
+                        (key, "Quit", false)
+                    }
+                }
+                Click::Mute => match (g.screen, g.settings.muted) {
+                    (Screen::Title, false) => ("M", "Mute", false),
+                    (Screen::Title, true) => ("M", "Unmute", false),
+                    (_, false) => ("M", "Sound is on", false),
+                    (_, true) => ("M", "Sound is muted", false),
+                },
+                _ => continue,
+            };
+            self.centered_at(
+                &format!("{key}  {label}"),
+                rect.x + rect.w / 2.,
+                rect.y + 17.,
+                size,
+                c(if armed { WARN } else { MUTED }),
             );
         }
     }
@@ -749,67 +821,37 @@ impl Ui {
         if g.settings.speed < 10 {
             status += &format!("   /   GAME SPEED {}%", g.settings.speed as u32 * 10);
         }
-        if g.pad_lost {
-            self.center(
-                "Reconnect it to carry on, or resume with the keyboard.",
-                478.,
-                15.,
-                c(0xef9c81),
-            );
+        // A confirmation's warning takes the status line, above the links
+        // that a second press or click confirms.
+        let warning = if g.quit_armed {
+            Some(format!(
+                "Press {} again to quit. {}",
+                p.menu(Menu::QuitPaused),
+                if g.run_is_saved() {
+                    "Continuing later restarts this biome; carried embers are lost."
+                } else {
+                    "Runs are saved from the second biome on, so this one ends."
+                }
+            ))
+        } else if g.abandon_armed {
+            Some(format!(
+                "Press {} again to abandon this run. Carried embers and equipment will be lost.",
+                p.menu(Menu::Abandon)
+            ))
+        } else if g.pad_lost {
+            Some("Reconnect it to carry on, or resume with the keyboard.".into())
         } else {
-            self.center(&status, 478., 13., c(TEAL));
+            None
+        };
+        match warning {
+            Some(warning) => self.center(&warning, 478., 15., c(WARN)),
+            None => self.center(&status, 478., 13., c(TEAL)),
         }
         self.button(
             &format!("{}   Resume the descent", p.menu(Menu::Pause)),
             PAUSE_BUTTON,
         );
-        if g.quit_armed {
-            self.center(
-                &format!(
-                    "Press {} again to quit. {}",
-                    p.menu(Menu::QuitPaused),
-                    if g.run_is_saved() {
-                        "Continuing later restarts this biome; carried embers are lost."
-                    } else {
-                        "Runs are saved from the second biome on, so this one ends."
-                    }
-                ),
-                577.,
-                15.,
-                c(0xef9c81),
-            );
-        } else if g.abandon_armed {
-            self.center(
-                &format!(
-                    "Press {} again to abandon this run. Carried embers and equipment will be lost.",
-                    p.menu(Menu::Abandon)
-                ),
-                577.,
-                15.,
-                c(0xef9c81),
-            );
-        } else {
-            self.center(
-                &format!(
-                    "{}  Options      {}  Abandon run{}{}",
-                    p.menu(Menu::Options),
-                    p.menu(Menu::Abandon),
-                    if QUIT {
-                        format!("      {}  Quit", p.menu(Menu::QuitPaused))
-                    } else {
-                        String::new()
-                    },
-                    match (p.pad(), g.settings.muted) {
-                        (true, _) => "",
-                        (false, true) => "      M  Sound is muted",
-                        (false, false) => "      M  Sound is on",
-                    }
-                ),
-                577.,
-                15.,
-                c(MUTED),
-            );
-        }
+        self.links(g, 15.);
     }
     fn controls(&self, g: &Game) {
         self.modal(Rect::new(255., 114., 770., 493.), "Controls", 221.);

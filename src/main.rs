@@ -100,26 +100,37 @@ fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
         return;
     }
     let clicked = keys.click.and_then(|at| ui::click_at(g, at));
+    if clicked == Some(ui::Click::Mute) {
+        g.settings.muted = !g.settings.muted;
+        g.persist_settings();
+    }
     if ((keys.pressed)(KeyCode::Tab) || pad.pressed(Button::Select)) && g.screen == Screen::Playing
     {
         g.map = !g.map;
     }
     if matches!(g.screen, Screen::Title | Screen::Paused)
-        && ((keys.pressed)(KeyCode::O) || pad.pressed(Button::North))
+        && ((keys.pressed)(KeyCode::O)
+            || pad.pressed(Button::North)
+            || clicked == Some(ui::Click::Options))
     {
         g.open_options();
         return;
     }
-    if g.screen == Screen::Paused && ((keys.pressed)(KeyCode::X) || pad.pressed(Button::West)) {
+    if g.screen == Screen::Paused
+        && ((keys.pressed)(KeyCode::X)
+            || pad.pressed(Button::West)
+            || clicked == Some(ui::Click::Abandon))
+    {
         g.request_abandon();
         return;
     }
-    // Browsers close the tab instead.
-    let quit = match g.screen {
-        Screen::Title => (keys.pressed)(KeyCode::Escape) || pad.pressed(Button::East),
-        Screen::Paused => (keys.pressed)(KeyCode::Q) || pad.pressed(Button::Select),
-        _ => false,
-    };
+    // Browsers close the tab instead, and show no quit link.
+    let quit = clicked == Some(ui::Click::Quit)
+        || match g.screen {
+            Screen::Title => (keys.pressed)(KeyCode::Escape) || pad.pressed(Button::East),
+            Screen::Paused => (keys.pressed)(KeyCode::Q) || pad.pressed(Button::Select),
+            _ => false,
+        };
     if quit && cfg!(not(target_arch = "wasm32")) {
         g.request_quit();
         return;
@@ -151,7 +162,10 @@ fn menus(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
         Screen::Title if g.resume.is_some() => {
             if confirm || pad.pressed(Button::Start) {
                 g.continue_run();
-            } else if (keys.pressed)(KeyCode::N) || pad.pressed(Button::West) {
+            } else if (keys.pressed)(KeyCode::N)
+                || pad.pressed(Button::West)
+                || clicked == Some(ui::Click::NewRun)
+            {
                 g.start();
             }
         }
@@ -1497,6 +1511,60 @@ mod capture_tests {
         assert_eq!(g.screen, Screen::Options);
         click(&mut g, Back);
         assert_eq!(g.screen, Screen::Paused);
+    }
+
+    #[test]
+    fn the_mouse_reaches_the_title_and_pause_links() {
+        use ui::Click::*;
+        let none = |_: KeyCode| false;
+        let pad = pad::Pad::new();
+        let click = |g: &mut Game, target: ui::Click| {
+            let keys = MenuKeys {
+                pressed: &none,
+                last: None,
+                click: Some(centre(g, target)),
+            };
+            menus(g, &keys, &pad);
+        };
+        let has = |g: &Game, target| ui::targets(g).iter().any(|(_, c)| *c == target);
+        let mut g = Game::new(4017, save::Save::default());
+        assert!(!has(&g, NewRun), "no new descent without a run to continue");
+        click(&mut g, Mute);
+        assert!(g.settings.muted);
+        click(&mut g, Mute);
+        assert!(!g.settings.muted);
+        click(&mut g, Options);
+        assert_eq!(g.screen, Screen::Options);
+        click(&mut g, Back);
+        assert_eq!(g.screen, Screen::Title);
+        click(&mut g, Quit);
+        assert!(g.quit_armed && !g.quit);
+        click(&mut g, Quit);
+        assert!(g.quit, "a second click on Confirm quit quits");
+        g.quit = false;
+        g.quit_armed = false;
+        // New descent replaces a run there is to continue.
+        g.resume = Some(g.checkpoint());
+        click(&mut g, NewRun);
+        assert_eq!(g.screen, Screen::Playing);
+        assert!(g.resume.is_none());
+        g.screen = Screen::Paused;
+        click(&mut g, Options);
+        assert_eq!(g.screen, Screen::Options);
+        click(&mut g, Back);
+        click(&mut g, Quit);
+        assert!(g.quit_armed);
+        click(&mut g, Abandon);
+        assert!(
+            g.abandon_armed && !g.quit_armed,
+            "one confirmation at a time"
+        );
+        click(&mut g, Abandon);
+        assert_eq!(g.screen, Screen::Dead);
+        // Controllers see no mute link.
+        g.screen = Screen::Paused;
+        g.pad_prompts = true;
+        assert!(!has(&g, Mute) && has(&g, Abandon));
     }
 
     #[test]

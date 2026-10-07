@@ -147,7 +147,7 @@ These are the default keys. Gameplay keys can be rebound under **O** → **Contr
 | **Space / W / ↑** | Jump; press again for a double jump |
 | **S / ↓ + Space** on a ledge | Drop through that ledge |
 | **S / ↓** while falling | Ground slam |
-| **J** or **left mouse** | Melee combo; hold to repeat. In menus, a left click chooses a button or card |
+| **J** or **left mouse** | Melee combo; hold to repeat. In menus, a left click chooses a button, card, row, or link, so every menu works with the mouse alone |
 | **K** | Fire glassbolt |
 | **Shift** | Dodge with brief invulnerability |
 | **L** or **right mouse** | Directional parry; reflect projectiles |
@@ -204,7 +204,7 @@ The [engine guide](docs/ENGINE.md) includes the source map, rendering pipeline, 
 
 **A playable prototype under active development.** The core run loop, vertical exploration, combat, progression, and visual systems are implemented. This is an original project inspired by the action-roguelite genre, not a claim of feature parity with Dead Cells.
 
-The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, lighting, tips, fullscreen, and a game speed from 50% to 100% for players who need more time to react; those choices are saved separately from progress. Gameplay keys can be rebound, and most menus also take a mouse click. Controllers work with a fixed layout, tested only with simulated devices. The game pauses itself when its window or tab loses focus or a controller is removed, and the desktop game can be quit from the title and pause screens. Broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas fills in as you explore, with the bellgate always marked. See [current boundaries](docs/ENGINE.md#current-boundaries).
+The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, lighting, tips, fullscreen, and a game speed from 50% to 100% for players who need more time to react; those choices are saved separately from progress. Gameplay keys can be rebound, and every menu also works with the mouse alone. Controllers work with a fixed layout, tested only with simulated devices. The game pauses itself when its window or tab loses focus or a controller is removed, and the desktop game can be quit from the title and pause screens. Broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas fills in as you explore, with the bellgate always marked. See [current boundaries](docs/ENGINE.md#current-boundaries).
 
 To check a change locally:
 
