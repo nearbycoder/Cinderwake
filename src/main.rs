@@ -438,7 +438,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 33] = [
+const UI_GALLERY_NAMES: [&str; 35] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -472,6 +472,8 @@ const UI_GALLERY_NAMES: [&str; 33] = [
     "ui-30-hover-title-confirm-quit",
     "ui-31-threats-out-of-view",
     "ui-32-low-vitality-steady",
+    "ui-33-hover-controls-row",
+    "ui-34-hover-camp-route",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -760,6 +762,25 @@ fn ui_fixture(index: usize) -> Game {
             g.player.hp = 30.;
             g.player.flasks = 2;
             g.settings.reduce_flashes = true;
+        }
+        // The controls page and the Keeper's route with the mouse in use,
+        // so their hints describe clicks.
+        33 | 34 => {
+            g.screen = Screen::Paused;
+            let target = if index == 33 {
+                g.open_options();
+                g.options_row = settings::Settings::CONTROLS_ROW;
+                g.open_controls();
+                g.controls_row = 2;
+                ui::Click::Row(2)
+            } else {
+                g.screen = Screen::Camp;
+                ui::Click::Route
+            };
+            g.pointer = ui::targets(&g)
+                .into_iter()
+                .find(|(_, click)| *click == target)
+                .map(|(rect, _)| rect.center());
         }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
@@ -1793,6 +1814,43 @@ mod capture_tests {
         };
         follow_devices(&mut g, pad, button);
         assert!(g.pointer.is_none() && g.pad_prompts);
+    }
+
+    #[test]
+    fn menu_hints_follow_the_device_used_last() {
+        let mut g = Game::new(4017, save::Save::default());
+        g.stage = 0;
+        let device = |pad, typed, moved| Devices {
+            pad,
+            typed,
+            moved,
+            ..Default::default()
+        };
+        let hints = |g: &Game| {
+            [
+                ui::options_footer(g),
+                ui::controls_footer(g),
+                ui::route_hint(g),
+            ]
+        };
+        let keys = hints(&g);
+        assert!(keys[0].starts_with("W / S  choose") && keys[0].contains("M  mute"));
+        assert!(keys[1].contains("ENTER  rebind or restore"));
+        assert!(keys[2].starts_with("A / D"));
+        follow_devices(&mut g, device(false, false, true), vec2(640., 360.));
+        let mouse = hints(&g);
+        for hint in &mouse {
+            assert!(hint.starts_with("CLICK"), "{hint}");
+        }
+        assert!(mouse[0].contains("M  mute"), "the mute key still works");
+        follow_devices(&mut g, device(true, false, false), vec2(640., 360.));
+        let pad = hints(&g);
+        assert!(pad[0].starts_with("D-PAD  choose") && !pad[0].contains("mute"));
+        assert!(pad[1].contains("A  rebind"));
+        follow_devices(&mut g, device(false, false, true), vec2(600., 300.));
+        assert!(hints(&g)[1].starts_with("CLICK"), "the mouse again");
+        follow_devices(&mut g, device(false, true, false), vec2(600., 300.));
+        assert_eq!(hints(&g), keys, "a key press brings the keys back");
     }
 
     #[test]

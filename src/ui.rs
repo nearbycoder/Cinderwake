@@ -175,6 +175,54 @@ pub fn targets(g: &Game) -> Vec<(Rect, Click)> {
     targets
 }
 /// The menu target under a point in interface coordinates (1280 × 720).
+/// Whether the mouse was the last thing used, so hints describe clicks. A
+/// key press or controller input clears the pointer.
+fn mouse_last(g: &Game) -> bool {
+    g.pointer.is_some()
+}
+/// The options page's footer, for the device used last.
+pub fn options_footer(g: &Game) -> String {
+    let p = g.prompts();
+    if mouse_last(g) {
+        "CLICK  a switch to flip it, a bar to set it, < > to step it      M  mute all sound".into()
+    } else if p.pad() {
+        format!(
+            "{}  choose      {}  adjust",
+            p.menu(Menu::Rows),
+            p.menu(Menu::Adjust)
+        )
+    } else {
+        format!(
+            "{}  choose      {}  adjust      M  mute all sound",
+            p.menu(Menu::Rows),
+            p.menu(Menu::Adjust)
+        )
+    }
+}
+/// The controls page's footer, for the device used last.
+pub fn controls_footer(g: &Game) -> String {
+    let p = g.prompts();
+    if mouse_last(g) {
+        "CLICK  an action to rebind it, or restore the default keys".into()
+    } else {
+        format!(
+            "{}  choose      {}  rebind or restore",
+            p.menu(Menu::Rows),
+            p.menu(Menu::Confirm)
+        )
+    }
+}
+/// The Keeper's line above the route, for the device used last.
+pub fn route_hint(g: &Game) -> String {
+    if mouse_last(g) {
+        "CLICK   the destination to change it".into()
+    } else {
+        format!(
+            "{}   Choose your next destination",
+            g.prompts().menu(Menu::Adjust)
+        )
+    }
+}
 pub fn click_at(g: &Game, at: Vec2) -> Option<Click> {
     targets(g)
         .into_iter()
@@ -1007,16 +1055,7 @@ impl Ui {
         };
         self.center(note, 500., 15., c(MUTED));
         self.button(&format!("{}   Back", p.menu(Menu::Back)), CONTROLS_BACK);
-        self.center(
-            &format!(
-                "{}  choose      {}  rebind or restore",
-                p.menu(Menu::Rows),
-                p.menu(Menu::Confirm)
-            ),
-            584.,
-            14.,
-            c(MUTED),
-        );
+        self.center(&controls_footer(g), 584., 14., c(MUTED));
     }
     fn options(&self, g: &Game) {
         let p = g.prompts();
@@ -1065,7 +1104,14 @@ impl Ui {
                 }
                 RowValue::Page => {
                     self.text(
-                        &format!("{}   Rebind keys", p.menu(Menu::Confirm)),
+                        &format!(
+                            "{}   Rebind keys",
+                            if mouse_last(g) {
+                                "CLICK"
+                            } else {
+                                p.menu(Menu::Confirm)
+                            }
+                        ),
                         640.,
                         y + 18.,
                         17.,
@@ -1086,21 +1132,7 @@ impl Ui {
         let (_, _, help) = g.settings.row(g.options_row);
         self.center(help, 503., 15., c(MUTED));
         self.button(&format!("{}   Back", p.menu(Menu::Back)), OPTIONS_BACK);
-        self.center(
-            &format!(
-                "{}  choose      {}  adjust{}",
-                p.menu(Menu::Rows),
-                p.menu(Menu::Adjust),
-                if p.pad() {
-                    ""
-                } else {
-                    "      M  mute all sound"
-                }
-            ),
-            584.,
-            14.,
-            c(MUTED),
-        );
+        self.center(&options_footer(g), 584., 14., c(MUTED));
     }
     fn reliquary(&self, g: &Game) {
         let Some(found) = g.offer else { return };
@@ -1278,10 +1310,7 @@ impl Ui {
         }
         self.center(
             &if g.stage == 0 {
-                format!(
-                    "{}   Choose your next destination",
-                    g.prompts().menu(Menu::Adjust)
-                )
+                route_hint(g)
             } else {
                 "The Regent awaits above the clouds.".into()
             },
