@@ -12,11 +12,29 @@
       color: #f2d7a2; font: 18px Georgia, serif; text-align: center; pointer-events: none;
     }
     #loading small { color: #a1c6c4; font: 13px monospace; }
+    #loading .bar {
+      width: min(320px, 70vw); height: 6px; margin: 4px auto 0;
+      border: 1px solid #6b5a3e; background: #151827;
+    }
+    #loading .bar div { width: 0; height: 100%; background: #d6ae67; }
+    #loading.failed { pointer-events: auto; color: #f0a48a; }
+    #loading.failed .bar { display: none; }
+    #loading.failed small { color: #f2d7a2; font: 15px Georgia, serif; max-width: 34em; line-height: 1.4; }
+    #stopped {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+      padding: 12px 18px; border: 1px solid #6b5a3e; background: #0b0d16e6;
+      color: #f2d7a2; font: 16px Georgia, serif; text-align: center;
+    }
+    #stopped small { display: block; margin-top: 4px; color: #a1c6c4; font: 13px Georgia, serif; }
   </style>
 </head>
 <body>
   <canvas id="glcanvas" tabindex="1"></canvas>
-  <div id="loading">Kindling the city…<small>about 52 MB · keyboard or controller</small></div>
+  <div id="loading" role="status">
+    <span id="loading-title">Kindling the city…</span>
+    <div class="bar"><div id="loading-fill"></div></div>
+    <small id="loading-detail">about 52 MB · keyboard, mouse, or controller</small>
+  </div>
   <!-- The bundle's unused quad_net plugin assigns this undeclared global in strict mode. -->
   <script>var register_plugin;</script>
   <script src="mq_js_bundle.js"></script>
@@ -43,14 +61,112 @@
     };
   </script>
   <script>
-    load("cinderwake.wasm");
-    // The game draws its first frame once embedded art has been decoded.
-    (function hide() {
-      if (typeof wasm_exports !== "undefined" && wasm_exports) {
-        requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById("loading").remove()));
-      } else {
-        setTimeout(hide, 100);
+    // The page downloads the game itself, to show progress, and hands the
+    // loader the finished file. The loader only logs its own failures, so
+    // the page watches for them too and says what went wrong.
+    const loading = document.getElementById("loading");
+    const say = (title, detail) => {
+      document.getElementById("loading-title").textContent = title;
+      document.getElementById("loading-detail").textContent = detail;
+    };
+    let failed = false;
+    const fail = (title, detail) => {
+      if (failed) return;
+      failed = true;
+      loading.classList.add("failed");
+      loading.setAttribute("role", "alert");
+      say(title, detail);
+    };
+    const megabytes = (bytes) => (bytes / 1e6).toFixed(1);
+    function webglAvailable() {
+      const probe = document.createElement("canvas");
+      const gl = probe.getContext("webgl2") || probe.getContext("webgl");
+      if (gl) gl.getExtension("WEBGL_lose_context")?.loseContext();
+      return !!gl;
+    }
+    // A failed compile or start reaches only the loader's own catch.
+    const watched = {};
+    for (const name of ["compileStreaming", "instantiate"]) {
+      const real = WebAssembly[name];
+      if (typeof real !== "function") continue;
+      watched[name] = real;
+      WebAssembly[name] = function (...args) {
+        return real.apply(this, args).catch((error) => {
+          fail("Cinderwake couldn't start in this browser.",
+            `${error && error.message ? error.message + ". " : ""}Reload the page to try again, or try a current Chrome, Edge, or Firefox.`);
+          throw error;
+        });
+      };
+    }
+    // Once running, a WebAssembly error (a crash in the game) stops it.
+    window.addEventListener("error", (event) => {
+      if (!(event.error instanceof WebAssembly.RuntimeError)) return;
+      if (document.getElementById("stopped")) return;
+      const note = document.createElement("div");
+      note.id = "stopped";
+      note.setAttribute("role", "alert");
+      note.innerHTML = "Cinderwake stopped unexpectedly.<small>Reload the page to continue. Progress, options, and the last checkpoint of a run are kept in this browser.</small>";
+      document.body.append(note);
+    });
+    async function download(path) {
+      let response;
+      try {
+        response = await fetch(path);
+      } catch (error) {
+        throw new Error("The game couldn't be downloaded. Check the connection, then reload the page.");
       }
+      if (!response.ok) {
+        throw new Error(`The game couldn't be downloaded (the server answered ${response.status} ${response.statusText}). Reload the page to try again.`);
+      }
+      // A server that compresses the file reports the compressed size, so
+      // the bar follows it only while the count stays below it.
+      const total = Number(response.headers.get("Content-Length")) || 0;
+      const fill = document.getElementById("loading-fill");
+      const parts = [];
+      let received = 0;
+      try {
+        const reader = response.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          parts.push(value);
+          received += value.length;
+          const known = total > 0 && received <= total;
+          fill.style.width = known ? `${(100 * received) / total}%` : "100%";
+          say("Kindling the city…", known
+            ? `${megabytes(received)} of ${megabytes(total)} MB`
+            : `${megabytes(received)} MB`);
+        }
+      } catch (error) {
+        throw new Error(`The download stopped after ${megabytes(received)} MB. Check the connection, then reload the page.`);
+      }
+      return new Blob(parts, { type: "application/wasm" });
+    }
+    (async () => {
+      if (!webglAvailable()) {
+        fail("This browser couldn't start WebGL, which Cinderwake draws with.",
+          "Turn on hardware acceleration in the browser's settings, or try another browser.");
+        return;
+      }
+      let file;
+      try {
+        file = await download("cinderwake.wasm");
+      } catch (error) {
+        fail("Cinderwake couldn't be loaded.", error.message);
+        return;
+      }
+      say("Preparing the city…", "decoding art and sound");
+      load(URL.createObjectURL(file));
+      // The game draws its first frame once embedded art has been decoded.
+      (function hide() {
+        if (failed) return;
+        if (typeof wasm_exports !== "undefined" && wasm_exports) {
+          Object.assign(WebAssembly, watched);
+          requestAnimationFrame(() => requestAnimationFrame(() => loading.remove()));
+        } else {
+          setTimeout(hide, 100);
+        }
+      })();
     })();
   </script>
 </body>
