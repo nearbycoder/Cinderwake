@@ -41,16 +41,16 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/particles.rs`](../src/particles.rs) | Typed event effects, bounded particle storage, visual randomness, particle physics, and drawing |
 | [`src/environment.rs`](../src/environment.rs) | Biome plates and panoramas, region names, elevation blending, terrain, scenery, atmosphere, and props |
 | [`src/scenery.rs`](../src/scenery.rs) | Transient pixel-flame effects |
-| [`src/render.rs`](../src/render.rs) | World composition, combat effects, and camera-relative drawing |
+| [`src/render.rs`](../src/render.rs) | World composition, combat effects, attack warnings, and camera-relative drawing |
 | [`src/postprocess.rs`](../src/postprocess.rs) | Bloom targets, world grading, combat lights, and unfiltered fallback |
 | [`assets/shaders/`](../assets/shaders/) | Fullscreen vertex shader, bloom fragment shader, and composite fragment shader |
-| [`src/ui.rs`](../src/ui.rs) | HUD, interaction prompts, atlas, title screen, and menus |
+| [`src/ui.rs`](../src/ui.rs) | HUD, interaction prompts, atlas, title screen, menus, and their click targets |
 | [`src/ui_skin.rs`](../src/ui_skin.rs) | Generated UI atlas, nine-slice frames, gauges, icons, and crest |
 | [`src/audio.rs`](../src/audio.rs) | Embedded audio, effect dispatch, per-scene music choice, and crossfades |
 | [`src/save.rs`](../src/save.rs) | Version-tolerant JSON progress, the run checkpoint, and keeping unreadable files aside |
 | [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute, fullscreen, seen tips, game speed, and key bindings |
 | [`src/controls.rs`](../src/controls.rs) | Rebindable gameplay actions, the bindable-key table, input gathering, and prompt names for keys or controller buttons |
-| [`src/pad.rs`](../src/pad.rs) | Controllers: the fixed layout, stick dead zone, menu directions, and the `gilrs` (desktop) and Gamepad API (browser) readers |
+| [`src/pad.rs`](../src/pad.rs) | Controllers: the fixed layout, stick dead zone, menu directions, connection changes, and the `gilrs` (desktop) and Gamepad API (browser) readers |
 | [`src/icon.rs`](../src/icon.rs) | The desktop window icon, cut from the interface crest at launch |
 | [`src/storage.rs`](../src/storage.rs) | Per-platform data directory, atomic file replacement, and browser `localStorage` |
 | [`web/`](../web/) | Browser page, storage plugin, and controller plugin used by `scripts/build-web.sh` |
@@ -306,7 +306,7 @@ This is a playable prototype, with these limits visible in the current implement
 - Three melee weapons, a small skill set, shared melee artwork, and reused animation poses for some actions.
 - One final boss, one ending, and a limited mutation and upgrade economy. No blueprint unlock tree, extensive affixes/synergies, or traversal-rune progression.
 - An atlas with a simple cell-based fog of war; no challenge modes or DLC systems.
-- Keyboard/mouse controls with rebindable gameplay keys, and controllers with a fixed layout that has been tested only with simulated devices; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, lighting, fullscreen, game speed, and key bindings.
+- Keyboard/mouse controls with rebindable gameplay keys (the mouse also chooses buttons and cards in most menus), and controllers with a fixed layout that has been tested only with simulated devices; no localization. Accessibility options are limited to volume, shake intensity, hit-stop, flash reduction, lighting, fullscreen, game speed, and key bindings.
 - macOS Apple Silicon and Linux verification only, an experimental browser build tested only in headless Chrome, and local, unpublished packages (an ad-hoc signed macOS app and a Linux tarball).
 - Prototype audio, balancing, encounter variety, and animation coverage. Visual captures and automated tests are complementary checks, not a guarantee of zero defects.
 
