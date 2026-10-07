@@ -51,6 +51,7 @@ The simulation uses a 120 Hz fixed step independently of render cadence. Animati
 | [`src/settings.rs`](../src/settings.rs) | Saved player options: volume, shake, hit-stop, flash reduction, lighting, mute, fullscreen, seen tips, game speed, and key bindings |
 | [`src/controls.rs`](../src/controls.rs) | Rebindable gameplay actions, the bindable-key table, input gathering, and prompt names for keys or controller buttons |
 | [`src/pad.rs`](../src/pad.rs) | Controllers: the fixed layout, stick dead zone, menu directions, and the `gilrs` (desktop) and Gamepad API (browser) readers |
+| [`src/icon.rs`](../src/icon.rs) | The desktop window icon, cut from the interface crest at launch |
 | [`src/storage.rs`](../src/storage.rs) | Per-platform data directory, atomic file replacement, and browser `localStorage` |
 | [`web/`](../web/) | Browser page, storage plugin, and controller plugin used by `scripts/build-web.sh` |
 
@@ -200,6 +201,8 @@ open dist/Cinderwake.app
 ```
 
 The script builds the release executable, creates `dist/Cinderwake.app`, includes the MIT and font license notices, and ad-hoc signs it. It does not notarize, publish, or distribute the app. macOS Apple Silicon and Linux (CachyOS, Wayland/XWayland, AMD graphics, 1.25× scaling) have been built and visually checked; Windows has not.
+
+The desktop window's icon is the crest's central medallion at 16, 32, and 64 pixels. [`src/icon.rs`](../src/icon.rs) cuts it from `assets/ui/crest-v1.png` at launch with an alpha-weighted box filter, so there's no second image to keep in step; before round 5 the window showed Miniquad's default logo. On Linux the window also sets its X11 class (and Wayland app id) to `cinderwake`, which desktops use to match a window to a launcher. Checked on XWayland by reading the window's `WM_CLASS` and `_NET_WM_ICON` with `xprop` and rendering the icon data back to an image ([`media/improvements/round5/c-window-icon-from-xprop.png`](media/improvements/round5/c-window-icon-from-xprop.png)). Windows, macOS, and whether a particular taskbar uses the icon haven't been checked. The browser build doesn't set one.
 
 ### Browser build
 

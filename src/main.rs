@@ -5,6 +5,7 @@ mod audio;
 mod controls;
 mod environment;
 mod game;
+mod icon;
 mod launch;
 mod pad;
 mod particles;
@@ -27,6 +28,16 @@ fn conf() -> Conf {
         window_height: 720,
         high_dpi: true,
         window_resizable: true,
+        // Browsers ignore the icon, so the build there skips decoding it.
+        icon: if cfg!(target_arch = "wasm32") {
+            None
+        } else {
+            icon::window_icon()
+        },
+        platform: miniquad::conf::Platform {
+            linux_wm_class: "cinderwake",
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
