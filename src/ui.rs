@@ -588,6 +588,9 @@ impl Ui {
         if let Some(mutation) = player.mutation_name() {
             status += &format!("   /   {}", mutation.to_uppercase());
         }
+        if g.settings.speed < 10 {
+            status += &format!("   /   GAME SPEED {}%", g.settings.speed as u32 * 10);
+        }
         self.center(&status, 478., 13., c(TEAL));
         self.button(
             &format!("{}   Resume the descent", p.menu(Menu::Pause)),
@@ -708,7 +711,7 @@ impl Ui {
         let p = g.prompts();
         self.modal(Rect::new(255., 114., 770., 493.), "Options", 221.);
         for row in 0..Settings::ROWS {
-            let y = 232. + row as f32 * 28.;
+            let y = 228. + row as f32 * 26.;
             let selected = row == g.options_row;
             let (label, value, _) = g.settings.row(row);
             if selected {
@@ -762,7 +765,7 @@ impl Ui {
             }
         }
         let (_, _, help) = g.settings.row(g.options_row);
-        self.center(help, 500., 15., c(MUTED));
+        self.center(help, 503., 15., c(MUTED));
         self.button(
             &format!("{}   Back", p.menu(Menu::Back)),
             Rect::new(483., 513., 314., 50.),
@@ -1082,6 +1085,15 @@ impl Ui {
                 left.y + 120.,
                 17.,
                 c(color),
+            );
+        }
+        if g.settings.speed < 10 {
+            self.text(
+                &format!("Game speed {}%", g.settings.speed as u32 * 10),
+                left.x + 26.,
+                left.y + 226.,
+                13.,
+                c(MUTED),
             );
         }
         let s = &g.save;

@@ -243,6 +243,15 @@ fn controls_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
 }
 
 /// Presentation-only camera shake, scaled by the player's comfort setting.
+/// Simulated seconds to run for one frame. Scripted modes (captures, the
+/// demo, and the tour) ignore the game-speed option so their output is fixed.
+fn sim_seconds(g: &Game, frame_dt: f32, scripted: bool) -> f32 {
+    if scripted {
+        frame_dt
+    } else {
+        frame_dt * g.sim_speed()
+    }
+}
 fn camera_shake(g: &Game) -> Vec2 {
     if g.shake <= 0. {
         return Vec2::ZERO;
@@ -396,10 +405,12 @@ fn ui_fixture(index: usize) -> Game {
             g.open_options();
             g.options_row = 2;
             g.settings.shake = 4;
+            g.settings.speed = 8;
             g.settings.reduce_flashes = true;
         }
         12 => {
             g.screen = Screen::Paused;
+            g.settings.speed = 7;
             g.request_abandon();
         }
         13 => g.hint = Some((Hint::Parry, HINT_SECONDS)),
@@ -799,7 +810,11 @@ async fn main() {
         if staged || paused {
             accumulator = 0.;
         }
-        accumulator += if staged || paused { 0. } else { frame_dt };
+        accumulator += if staged || paused {
+            0.
+        } else {
+            sim_seconds(&g, frame_dt, demo || environment_tour)
+        };
         let mut animation_dt = 0.;
         while accumulator >= world::STEP {
             let animate_step =
@@ -1031,6 +1046,58 @@ async fn main() {
 mod capture_tests {
     use super::*;
 
+    #[test]
+    fn game_speed_slows_play_but_not_menus_or_scripted_modes() {
+        let mut g = Game::new(4017, save::Save::default());
+        g.screen = Screen::Playing;
+        // One real second of 60 fps frames, at each speed.
+        let second = |g: &Game, scripted: bool| {
+            (0..60)
+                .map(|_| sim_seconds(g, 1. / 60., scripted))
+                .sum::<f32>()
+        };
+        assert!((second(&g, false) - 1.).abs() < 1e-4);
+        g.settings.speed = 7;
+        assert!((second(&g, false) - 0.7).abs() < 1e-4);
+        g.settings.speed = settings::Settings::SLOWEST;
+        assert!((second(&g, false) - 0.5).abs() < 1e-4);
+        assert!(
+            (second(&g, true) - 1.).abs() < 1e-4,
+            "captures keep their timing"
+        );
+        for screen in [Screen::Title, Screen::Dead, Screen::Victory] {
+            g.screen = screen;
+            assert!((second(&g, false) - 1.).abs() < 1e-4, "{screen:?}");
+        }
+        // Half speed takes twice as long to run the same simulation.
+        let at = |speed| {
+            let mut g = Game::new(4017, save::Save::default());
+            g.start();
+            g.settings.speed = speed;
+            g
+        };
+        let (mut normal, mut slow) = (at(10), at(5));
+        let run = |g: &mut Game, frames: u32| {
+            let mut accumulator = 0.;
+            for _ in 0..frames {
+                accumulator += sim_seconds(g, 1. / 60., false);
+                while accumulator >= world::STEP {
+                    g.tick(
+                        world::STEP,
+                        Input {
+                            axis: 1.,
+                            ..Default::default()
+                        },
+                    );
+                    accumulator -= world::STEP;
+                }
+            }
+        };
+        run(&mut normal, 60);
+        run(&mut slow, 120);
+        assert!((normal.player.pos.x - slow.player.pos.x).abs() < 0.5);
+        assert!((normal.run_time - slow.run_time).abs() < 0.02);
+    }
     #[test]
     fn shake_setting_scales_only_the_presented_camera() {
         let mut g = Game::new(4017, save::Save::default());

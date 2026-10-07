@@ -22,6 +22,8 @@ pub struct Settings {
     pub hints_seen: u32,
     /// Gameplay key bindings, stored by name.
     pub keys: Bindings,
+    /// Simulation speed in play, in tenths: 5 (half speed) to 10.
+    pub speed: u8,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -37,14 +39,16 @@ impl Default for Settings {
             hints: true,
             hints_seen: 0,
             keys: Bindings::default(),
+            speed: 10,
         }
     }
 }
 impl Settings {
     pub const FILE: &str = "settings.json";
-    pub const ROWS: usize = 9;
+    pub const ROWS: usize = 10;
     /// The row that opens the controls page instead of adjusting a value.
-    pub const CONTROLS_ROW: usize = 8;
+    pub const CONTROLS_ROW: usize = 9;
+    pub const SLOWEST: u8 = 5;
 
     pub fn load() -> Self {
         crate::storage::read(Self::FILE)
@@ -59,6 +63,7 @@ impl Settings {
         for level in [&mut self.music, &mut self.effects, &mut self.shake] {
             *level = (*level).min(10);
         }
+        self.speed = self.speed.clamp(Self::SLOWEST, 10);
         self
     }
     pub fn music_gain(&self) -> f32 {
@@ -77,6 +82,11 @@ impl Settings {
     }
     pub fn shake_scale(&self) -> f32 {
         self.shake as f32 / 10.
+    }
+    /// How fast play runs: 1 is normal speed. Every part of the simulation
+    /// slows evenly, so only the time to react changes.
+    pub fn speed_scale(&self) -> f32 {
+        self.speed as f32 / 10.
     }
     /// Multiplier for impact flashes, shockwave rings, and combat light bursts.
     pub fn flash_scale(&self) -> f32 {
@@ -104,6 +114,7 @@ impl Settings {
                 }
             }
             7 => self.fullscreen = !self.fullscreen,
+            8 => self.speed = (self.speed as i32 + delta).clamp(Self::SLOWEST as i32, 10) as u8,
             _ => {}
         }
     }
@@ -150,6 +161,11 @@ impl Settings {
                 RowValue::Switch(self.fullscreen),
                 "Fill the screen, also toggled with F11. Desktop builds remember it.",
             ),
+            8 => (
+                "Game speed",
+                RowValue::Level(self.speed),
+                "Slows everything in play evenly, for more time to react. Menus and music keep pace.",
+            ),
             _ => (
                 "Controls",
                 RowValue::Page,
@@ -179,6 +195,7 @@ mod tests {
         assert_eq!(s.shake_scale(), 1.);
         assert_eq!(s.flash_scale(), 1.);
         assert!(s.hitstop && s.postfx && !s.muted && s.hints && !s.fullscreen);
+        assert_eq!(s.speed_scale(), 1.);
     }
 
     #[test]
@@ -210,6 +227,19 @@ mod tests {
         assert_eq!(s.row(Settings::CONTROLS_ROW).1, RowValue::Page);
         let back: Settings = serde_json::from_slice(&serde_json::to_vec(&s).unwrap()).unwrap();
         assert!(back.fullscreen, "fullscreen is saved");
+        s.adjust(8, 1);
+        assert_eq!(s.speed, 10, "normal speed is the fastest");
+        for _ in 0..8 {
+            s.adjust(8, -1);
+        }
+        assert_eq!(
+            (s.speed, s.speed_scale()),
+            (5, 0.5),
+            "half speed is the slowest"
+        );
+        assert_eq!(s.row(8).1, RowValue::Level(5));
+        let back: Settings = serde_json::from_slice(&serde_json::to_vec(&s).unwrap()).unwrap();
+        assert_eq!(back.speed, 5, "game speed is saved");
     }
 
     #[test]
@@ -221,6 +251,14 @@ mod tests {
             .unwrap()
             .sanitized();
         assert_eq!(s.effects, 10);
+        assert_eq!(
+            s.speed, 10,
+            "files from before game speed run at full speed"
+        );
+        let s = serde_json::from_str::<Settings>("{\"speed\":2}")
+            .unwrap()
+            .sanitized();
+        assert_eq!(s.speed, Settings::SLOWEST);
         let mut s = Settings::default();
         s.adjust(1, -3);
         let back: Settings = serde_json::from_slice(&serde_json::to_vec(&s).unwrap()).unwrap();

@@ -675,6 +675,15 @@ impl Game {
         }
         recap
     }
+    /// How fast the simulation runs this frame: the game-speed option
+    /// applies in play only, so menus and result screens keep normal pace.
+    pub fn sim_speed(&self) -> f32 {
+        if self.screen == Screen::Playing {
+            self.settings.speed_scale()
+        } else {
+            1.
+        }
+    }
     /// The result screens ignore confirming for their first second, so a
     /// button still held or mashed as the run ends doesn't skip the recap.
     pub fn result_ready(&self) -> bool {
