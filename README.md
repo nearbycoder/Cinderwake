@@ -182,7 +182,7 @@ Buttons use Xbox names; on other pads, **A** is the bottom face button, **B** th
 | **D-pad up** | Drink a flask | |
 | **Start** / **View** | Pause / vertical atlas | **View** twice when paused quits the desktop game |
 
-The controller layout can't be changed yet. Controllers work on the desktop through [gilrs](https://gitlab.com/gilrs-project/gilrs) and in the browser build through the Gamepad API. Both were checked with simulated controllers (a virtual Linux device and a scripted browser pad), not with a physical one.
+Removing a controller during play pauses the run. The controller layout can't be changed yet. Controllers work on the desktop through [gilrs](https://gitlab.com/gilrs-project/gilrs) and in the browser build through the Gamepad API. Both were checked with simulated controllers (a virtual Linux device and a scripted browser pad), not with a physical one.
 
 ## Inside the engine
 

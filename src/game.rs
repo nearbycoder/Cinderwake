@@ -429,6 +429,9 @@ pub struct Game {
     pub practice: bool,
     /// Prompts name controller buttons while a controller was used last.
     pub pad_prompts: bool,
+    /// The run paused because a controller was removed; shown until a
+    /// controller returns or play resumes.
+    pub pad_lost: bool,
     last_safe_pos: Vec2,
     /// The last thing that wounded the hero, named if the run ends.
     pub cause: Cause,
@@ -552,6 +555,7 @@ impl Game {
             quit_armed: false,
             quit: false,
             pad_prompts: false,
+            pad_lost: false,
             teach: false,
             hint: None,
             pending_hints: 0,
@@ -721,6 +725,17 @@ impl Game {
             self.screen = Screen::Paused;
             self.abandon_armed = false;
         }
+    }
+    /// A controller was removed: pause a run in progress, like losing
+    /// focus, and say why on the pause screen.
+    pub fn controller_lost(&mut self) {
+        if self.screen == Screen::Playing {
+            self.screen = Screen::Paused;
+            self.abandon_armed = false;
+            self.pad_lost = true;
+        }
+        // The pad that was prompting is gone, so name keys instead.
+        self.pad_prompts = false;
     }
     pub fn prompts(&self) -> Prompts<'_> {
         Prompts::new(&self.settings.keys, self.pad_prompts)
@@ -954,6 +969,9 @@ impl Game {
     pub fn tick(&mut self, dt: f32, input: Input) {
         if self.screen.freezes_world() {
             return;
+        }
+        if self.screen == Screen::Playing {
+            self.pad_lost = false;
         }
         self.time += dt;
         self.notice_time = (self.notice_time - dt).max(0.);
@@ -3088,6 +3106,25 @@ mod tests {
         storage::remove(Settings::FILE).unwrap();
         assert!(Game::load(12).unreadable.is_empty());
         assert!(storage::read("settings.unreadable-2.json").is_none());
+    }
+
+    #[test]
+    fn removing_a_controller_pauses_play_only() {
+        let mut g = game();
+        g.pad_prompts = true;
+        g.controller_lost();
+        assert_eq!(g.screen, Screen::Paused);
+        assert!(g.pad_lost && !g.pad_prompts);
+        g.tick(STEP, Input::default());
+        assert!(g.pad_lost, "paused, so the note stays");
+        g.screen = Screen::Playing;
+        g.tick(STEP, Input::default());
+        assert!(!g.pad_lost, "resuming clears it");
+        for screen in [Screen::Title, Screen::Scroll, Screen::Camp, Screen::Dead] {
+            g.screen = screen;
+            g.controller_lost();
+            assert_eq!((g.screen, g.pad_lost), (screen, false), "{screen:?}");
+        }
     }
 
     #[test]

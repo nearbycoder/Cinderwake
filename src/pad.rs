@@ -181,7 +181,18 @@ pub struct Pad {
     before: State,
     /// Buttons still held from a menu; they act again only after a release.
     held_over: [bool; BUTTONS],
+    /// Controllers connected at the last poll, and how that count changed.
+    connected: usize,
+    change: Connection,
     backend: Backend,
+}
+/// How the number of connected controllers changed at the last poll.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Connection {
+    #[default]
+    Same,
+    Lost,
+    Found,
 }
 impl Pad {
     pub fn new() -> Self {
@@ -189,13 +200,29 @@ impl Pad {
             now: State::default(),
             before: State::default(),
             held_over: [false; BUTTONS],
+            connected: 0,
+            change: Connection::Same,
             backend: Backend::new(),
         }
     }
     /// Reads every controller once per frame.
     pub fn poll(&mut self) {
         let state = self.backend.read();
+        let count = self.backend.count();
+        self.count(count);
         self.feed(state);
+    }
+    /// Records how many controllers are connected now.
+    pub fn count(&mut self, connected: usize) {
+        self.change = match connected.cmp(&self.connected) {
+            std::cmp::Ordering::Less => Connection::Lost,
+            std::cmp::Ordering::Greater => Connection::Found,
+            std::cmp::Ordering::Equal => Connection::Same,
+        };
+        self.connected = connected;
+    }
+    pub fn connection(&self) -> Connection {
+        self.change
     }
     pub fn feed(&mut self, state: State) {
         self.before = self.now;
@@ -327,12 +354,17 @@ impl Backend {
         }
         state
     }
+    /// Connected controllers, as of the events drained by `read`.
+    fn count(&self) -> usize {
+        self.0.as_ref().map_or(0, |gilrs| gilrs.gamepads().count())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 extern "C" {
     fn cinderwake_pad_buttons() -> u32;
     fn cinderwake_pad_axis(index: u32) -> f32;
+    fn cinderwake_pad_count() -> u32;
 }
 #[cfg(target_arch = "wasm32")]
 struct Backend;
@@ -359,6 +391,10 @@ impl Backend {
         }
         state
     }
+    fn count(&self) -> usize {
+        // SAFETY: a plain value call into web/cinderwake-pad.js.
+        unsafe { cinderwake_pad_count() as usize }
+    }
 }
 
 /// Tests never open real devices; they feed states directly.
@@ -372,6 +408,9 @@ impl Backend {
     fn read(&mut self) -> State {
         State::default()
     }
+    fn count(&self) -> usize {
+        0
+    }
 }
 
 #[cfg(test)]
@@ -381,6 +420,22 @@ mod tests {
     fn frame(pad: &mut Pad, buttons: &[Button], stick: Vec2) -> Input {
         pad.feed(State::with(buttons, stick));
         pad.gameplay()
+    }
+
+    #[test]
+    fn connection_changes_are_reported_for_one_poll() {
+        let mut pad = Pad::new();
+        for (count, change) in [
+            (1, Connection::Found),
+            (1, Connection::Same),
+            (2, Connection::Found),
+            (1, Connection::Lost),
+            (1, Connection::Same),
+            (0, Connection::Lost),
+        ] {
+            pad.count(count);
+            assert_eq!(pad.connection(), change, "{count}");
+        }
     }
 
     #[test]

@@ -270,7 +270,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 26] = [
+const UI_GALLERY_NAMES: [&str; 27] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -297,6 +297,7 @@ const UI_GALLERY_NAMES: [&str; 26] = [
     "ui-23-paused-quit",
     "ui-24-title-unreadable-save",
     "ui-25-attack-warnings",
+    "ui-26-paused-controller-lost",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -522,6 +523,7 @@ fn ui_fixture(index: usize) -> Game {
             }
             g.hint = None;
         }
+        26 => g.controller_lost(),
         14 => {
             g.screen = Screen::Reliquary;
             g.offer = Some(Weapon::Hammer);
@@ -740,6 +742,12 @@ async fn main() {
         // game is back in front.
         if focused {
             pad.poll();
+            match pad.connection() {
+                // Captures and staged views run unattended.
+                pad::Connection::Lost if !staged && !automated => g.controller_lost(),
+                pad::Connection::Found => g.pad_lost = false,
+                _ => {}
+            }
         } else {
             pad.feed(pad::State::default());
         }

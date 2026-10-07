@@ -24,6 +24,11 @@
         }
         return bits >>> 0;
       };
+      // Connected pads. Browsers list a pad only after one of its buttons
+      // has been pressed on the page, and drop it when it's removed.
+      importObject.env.cinderwake_pad_count = function () {
+        return pads().length;
+      };
       // The axis pushed furthest on any pad: 0 is the left stick's x, 1 its y.
       importObject.env.cinderwake_pad_axis = function (index) {
         let value = 0;

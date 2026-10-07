@@ -574,7 +574,15 @@ impl Ui {
         }
     }
     fn paused(&self, g: &Game) {
-        self.modal(Rect::new(255., 114., 770., 493.), "The city can wait", 221.);
+        self.modal(
+            Rect::new(255., 114., 770., 493.),
+            if g.pad_lost {
+                "Controller disconnected"
+            } else {
+                "The city can wait"
+            },
+            221.,
+        );
         let p = g.prompts();
         let k = |a| p.action(a).to_string();
         let rows = [
@@ -623,7 +631,16 @@ impl Ui {
         if g.settings.speed < 10 {
             status += &format!("   /   GAME SPEED {}%", g.settings.speed as u32 * 10);
         }
-        self.center(&status, 478., 13., c(TEAL));
+        if g.pad_lost {
+            self.center(
+                "Reconnect it to carry on, or resume with the keyboard.",
+                478.,
+                15.,
+                c(0xef9c81),
+            );
+        } else {
+            self.center(&status, 478., 13., c(TEAL));
+        }
         self.button(
             &format!("{}   Resume the descent", p.menu(Menu::Pause)),
             Rect::new(423., 493., 434., 57.),
