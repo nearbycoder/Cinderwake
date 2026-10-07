@@ -29,7 +29,7 @@ You are a small brass automaton in a city of copper, glass, and failing machiner
 
 ## What you can play
 
-- **Responsive combat, on keyboard or controller.** Chain melee strikes, reflect projectiles with directional parries, dodge through danger, fire glassbolts, throw fire vessels, and deploy arc snares.
+- **Responsive combat, on keyboard or controller.** Chain melee strikes, reflect projectiles with directional parries, dodge through danger, fire glassbolts, throw fire vessels, and deploy arc snares. Every guardian warns before it attacks: a mark over its head, the reach of its strike on the ground or the line of an archer's aim, and a short sound.
 - **Three elevations to explore.** Double jump into upper galleries, drop through ledges into the undercroft, and find connected routes back to the surface. A two-axis camera and full-height atlas follow the journey.
 - **A branching run.** Four biome themes, three stages per run, four guardian types, and a final fight against the Brass Regent.
 - **Choices that carry weight.** Three melee weapons, weapon tiers and scorching upgrades, three stat disciplines, two run mutations, copper forging, and permanent vitality and flask upgrades.
@@ -223,7 +223,7 @@ Tests cover physics, combat, progression, animation timing, effects, and multi-b
 The setting, characters, encounters, generated artwork, and synthesized audio are original. No Dead Cells assets or source code are used. [Dead Cells](https://en.wikipedia.org/wiki/Dead_Cells) was the initial genre and feel reference.
 
 - **Artwork:** created with the built-in ImageGen tool. Original PNG outputs and prompts are retained for [characters](assets/sprites/PROMPTS.md), [environments](assets/environment/PROMPTS.md), [panoramas and animated scenery](assets/environment/MOTION-PROMPTS.md), [vertical backdrops](assets/environment/DEPTH-PROMPTS.md), and [interface elements](assets/ui/PROMPTS.md).
-- **Audio:** an original synthesized score with a seamless loop for each biome plus the title and Keeper, and sixteen effects; regenerate and check with `python3 scripts/synthesize.py`.
+- **Audio:** an original synthesized score with a seamless loop for each biome plus the title and Keeper, and seventeen effects; regenerate and check with `python3 scripts/synthesize.py`.
 - **Font:** Cormorant Garamond, under the [SIL Open Font License](assets/FONT-LICENSE.txt).
 - **Code and generated artwork/audio:** [MIT](LICENSE). Macroquad and other dependencies retain their respective licenses.
 

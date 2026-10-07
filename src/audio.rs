@@ -88,6 +88,7 @@ fn effect_file(cue: Sfx) -> &'static [u8] {
         Sfx::Select => include_bytes!("../assets/select.wav"),
         Sfx::Deny => include_bytes!("../assets/deny.wav"),
         Sfx::Finisher => include_bytes!("../assets/finisher.wav"),
+        Sfx::Tell => include_bytes!("../assets/tell.wav"),
     }
 }
 

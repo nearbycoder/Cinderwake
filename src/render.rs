@@ -76,6 +76,12 @@ pub fn scene(g: &Game, art: &crate::art::Art) {
         }
         enemy(art, e, x, t);
     }
+    // Warnings go over every guardian so a crowd can't hide one.
+    for e in &g.level.enemies {
+        if e.hp > 0. && e.windup > 0. {
+            warning(e, e.pos.x - cam, g.player.pos - vec2(cam, 0.), t);
+        }
+    }
     let p = &g.player;
     let x = p.pos.x - cam;
     let y = p.pos.y;
@@ -193,12 +199,6 @@ fn enemy(art: &crate::art::Art, e: &Enemy, x: f32, t: f32) {
     let y = e.pos.y;
     r(x - 10., y - 1., 20., 2., alpha(c(0x090e21), 0.6));
     art.enemy(e, x, t);
-    if e.windup > 0. {
-        let yy = y - e.rect().h - 12.;
-        r(x - 2., yy, 4., 6., c(0x100e22));
-        r(x - 1., yy, 2., 4., c(0xffd777));
-        r(x - 1., yy + 6., 2., 2., c(0xfff3b0));
-    }
     if e.hp < e.max_hp {
         let w = if e.kind == EnemyKind::Regent {
             50.
@@ -227,4 +227,102 @@ fn enemy(art: &crate::art::Art, e: &Enemy, x: f32, t: f32) {
     }
 }
 
+/// What a guardian's windup will do, for drawing its warning.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Threatens {
+    /// A strike landing anywhere between these world x positions.
+    Strike { left: f32, right: f32 },
+    /// An archer's bolt toward the hero.
+    Bolt,
+    /// The Regent's fan of five bolts.
+    Volley,
+}
+pub fn threatens(e: &Enemy) -> Threatens {
+    match e.kind {
+        EnemyKind::Archer => Threatens::Bolt,
+        // Every third Regent attack is a volley; `phase` counts them.
+        EnemyKind::Regent if (e.phase + 1).is_multiple_of(3) => Threatens::Volley,
+        kind => {
+            let reach = kind.strike_reach().x;
+            Threatens::Strike {
+                left: e.pos.x - reach,
+                right: e.pos.x + reach,
+            }
+        }
+    }
+}
+
+/// A windup's warning: a mark over the guardian that brightens to red as
+/// the attack nears, and where the attack will land. Timing is unchanged;
+/// this only makes the existing tell readable.
+fn warning(e: &Enemy, x: f32, hero: Vec2, t: f32) {
+    let y = e.pos.y;
+    let progress = (1. - e.windup / e.kind.windup()).clamp(0., 1.);
+    let col = Color::from_vec(c(0xffd36e).to_vec().lerp(c(0xff5a45).to_vec(), progress));
+    match threatens(e) {
+        // Moths fly, so a mark on the ground would mislead; theirs is the mark alone.
+        Threatens::Strike { left, right } if e.kind != EnemyKind::Moth => {
+            let (left, right) = (left - e.pos.x + x, right - e.pos.x + x);
+            // A line along the ground, on a dark edge so it reads on any
+            // stone, with posts at the ends of the reach.
+            let a = 0.45 + 0.5 * progress;
+            r(left, y, right - left, 1., alpha(c(0x100e22), 0.5));
+            r(left, y - 1., right - left, 1., alpha(col, a * 0.8));
+            for edge in [left, right - 1.] {
+                r(edge, y - 5., 1., 5., alpha(col, a));
+            }
+        }
+        Threatens::Bolt => {
+            let from = vec2(x, y - 20.);
+            let to = hero - vec2(0., 15.);
+            let span = (to - from).length().min(320.);
+            let dir = (to - from).normalize_or_zero();
+            let mut d = 6.;
+            while d < span {
+                let p = from + dir * d;
+                r(p.x, p.y, 2., 1., alpha(col, 0.35 + 0.5 * progress));
+                d += 6.;
+            }
+        }
+        Threatens::Volley => {
+            let from = vec2(x, y - 34.);
+            for n in -2..=2 {
+                let to = from + vec2(e.face * 85., n as f32 * 24.);
+                line(from.x, from.y, to.x, to.y, alpha(col, 0.2 + 0.4 * progress));
+            }
+        }
+        _ => {}
+    }
+    // The mark: a small plaque with an exclamation, lifting as it pulses.
+    let bob = ((t * 18.).sin() * 0.5 + 0.5).round();
+    let top = y - e.rect().h - 22. - bob;
+    glow(x, top + 5., 10. + 6. * progress, col);
+    r(x - 4., top - 1., 8., 12., c(0x100e22));
+    r(x - 3., top, 6., 10., col);
+    r(x - 1., top + 1., 2., 5., c(0x100e22));
+    r(x - 1., top + 7., 2., 2., c(0x100e22));
+}
+
 pub use crate::ui::Ui;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn warnings_show_exactly_where_strikes_land() {
+        for kind in [EnemyKind::Warden, EnemyKind::Brute, EnemyKind::Regent] {
+            let e = Enemy::new(500., FLOOR, kind, Threat::BASE);
+            let Threatens::Strike { left, right } = threatens(&e) else {
+                panic!("{kind:?} strikes");
+            };
+            let reach = kind.strike_reach().x;
+            assert_eq!((left, right), (500. - reach, 500. + reach), "{kind:?}");
+        }
+        let archer = Enemy::new(0., FLOOR, EnemyKind::Archer, Threat::BASE);
+        assert_eq!(threatens(&archer), Threatens::Bolt);
+        let mut regent = Enemy::new(0., FLOOR, EnemyKind::Regent, Threat::BASE);
+        regent.phase = 2;
+        assert_eq!(threatens(&regent), Threatens::Volley, "every third attack");
+    }
+}

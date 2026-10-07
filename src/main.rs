@@ -270,7 +270,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 25] = [
+const UI_GALLERY_NAMES: [&str; 26] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -296,6 +296,7 @@ const UI_GALLERY_NAMES: [&str; 25] = [
     "ui-22-pad-memory",
     "ui-23-paused-quit",
     "ui-24-title-unreadable-save",
+    "ui-25-attack-warnings",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -505,6 +506,21 @@ fn ui_fixture(index: usize) -> Game {
                     kept: Ok("settings.unreadable.json".into()),
                 },
             ];
+        }
+        25 => {
+            // A brute, a warden, and an archer partway through their windups.
+            g.level.enemies.clear();
+            for (x, kind, left) in [
+                (790., world::EnemyKind::Brute, 0.45),
+                (925., world::EnemyKind::Warden, 0.12),
+                (1170., world::EnemyKind::Archer, 0.22),
+            ] {
+                let mut e = world::Enemy::new(x, world::FLOOR, kind, world::Threat::BASE);
+                e.windup = left;
+                e.face = if x < g.player.pos.x { 1. } else { -1. };
+                g.level.enemies.push(e);
+            }
+            g.hint = None;
         }
         14 => {
             g.screen = Screen::Reliquary;

@@ -56,6 +56,24 @@ impl EnemyKind {
             Self::Regent => 25.,
         }
     }
+    /// Seconds from the warning to the strike or shot.
+    pub fn windup(self) -> f32 {
+        match self {
+            Self::Brute => 0.65,
+            Self::Regent => 0.62,
+            _ => 0.4,
+        }
+    }
+    /// How far a melee strike reaches from the attacker's position, across
+    /// and up or down: the hero is hit only inside this box. The warning
+    /// drawn during a windup uses the same numbers. Archers shoot instead.
+    pub fn strike_reach(self) -> Vec2 {
+        match self {
+            Self::Brute => vec2(66., 37.),
+            Self::Regent => vec2(112., 70.),
+            _ => vec2(43., 37.),
+        }
+    }
 }
 /// Enemy strength for one stage of a run. Guardians gain 45% health and 30%
 /// damage per stage, keeping pace with the gear a run collects; recorded

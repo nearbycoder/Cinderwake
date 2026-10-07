@@ -109,6 +109,8 @@ impl Hint {
 pub const HINT_SECONDS: f32 = 6.;
 /// Seconds before the death and victory screens accept confirming.
 pub const RESULT_DELAY: f32 = 1.;
+/// Shortest gap between two windup tells.
+pub const TELL_GAP: f32 = 0.2;
 /// What ended a run.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Cause {
@@ -343,10 +345,12 @@ pub enum Sfx {
     Deny,
     /// The heavy third strike of a combo.
     Finisher,
+    /// A guardian on screen starts winding up an attack.
+    Tell,
 }
 impl Sfx {
     /// Every cue, in the order `Audio` loads their files.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Slash,
         Self::Hit,
         Self::Jump,
@@ -363,6 +367,7 @@ impl Sfx {
         Self::Select,
         Self::Deny,
         Self::Finisher,
+        Self::Tell,
     ];
 }
 pub struct Game {
@@ -431,6 +436,8 @@ pub struct Game {
     pub recap: Option<Recap>,
     /// Seconds the death or victory screen has been open.
     pub result_time: f32,
+    /// Seconds until another windup tell may sound.
+    tell_cooldown: f32,
 }
 
 /// One-way surfaces only catch downward crossings. Taking the highest crossed
@@ -558,6 +565,7 @@ impl Game {
             cause: Cause::Hazard,
             recap: None,
             result_time: 0.,
+            tell_cooldown: 0.,
         }
     }
     /// Normal play: progress, settings, and any run to continue, from
@@ -1288,11 +1296,13 @@ impl Game {
             .reveal(Rect::new(self.camera, self.camera_y, 640., 360.));
     }
     fn update_enemies(&mut self, dt: f32) {
+        self.tell_cooldown = (self.tell_cooldown - dt).max(0.);
         let pp = self.player.pos;
         let mut attacks = vec![];
         let mut shots = vec![];
         let mut parries = vec![];
         let mut burned_out = vec![];
+        let mut tells = vec![];
         for (i, e) in self.level.enemies.iter_mut().enumerate() {
             if e.hp <= 0. {
                 continue;
@@ -1349,16 +1359,16 @@ impl Game {
                                     });
                                 }
                             } else {
-                                if dx.abs() < 112. && dy.abs() < 70. {
+                                let reach = e.kind.strike_reach();
+                                if dx.abs() < reach.x && dy.abs() < reach.y {
                                     attacks.push((i, e.kind.hit_damage() * e.power, e.face));
                                 }
                                 e.pos.x += e.face * 55.;
                             }
                         }
                         _ => {
-                            if dx.abs() < if e.kind == EnemyKind::Brute { 66. } else { 43. }
-                                && dy.abs() < 37.
-                            {
+                            let reach = e.kind.strike_reach();
+                            if dx.abs() < reach.x && dy.abs() < reach.y {
                                 attacks.push((i, e.kind.hit_damage() * e.power, e.face));
                             }
                         }
@@ -1385,11 +1395,8 @@ impl Game {
                     }
                 && e.timer <= 0.
             {
-                e.windup = match e.kind {
-                    EnemyKind::Brute => 0.65,
-                    EnemyKind::Regent => 0.62,
-                    _ => 0.4,
-                };
+                e.windup = e.kind.windup();
+                tells.push(e.pos);
             } else if dx.abs() < 320. && dy.abs() < 150. && dx.abs() > range * 0.8 {
                 if e.kind == EnemyKind::Moth {
                     e.pos += (pp - vec2(0., 12.) - e.pos).normalize_or_zero() * 55. * dt;
@@ -1408,6 +1415,13 @@ impl Game {
         }
         for i in burned_out {
             self.hit(i, self.level.enemies[i].hp, 0., false, true);
+        }
+        // A tell for windups the player can see, at most every
+        // `TELL_GAP` seconds so a crowd doesn't become a drone.
+        let view = Rect::new(self.camera, self.camera_y, 640., 360.);
+        if self.tell_cooldown <= 0. && tells.iter().any(|p| view.contains(*p)) {
+            self.sounds.push(Sfx::Tell);
+            self.tell_cooldown = TELL_GAP;
         }
         self.shots.extend(shots);
         for (i, damage, dir) in attacks {
@@ -1875,6 +1889,92 @@ mod tests {
         g.screen = Screen::Playing;
         g.level.enemies.clear();
         g
+    }
+    /// A guardian beside the hero, ready to start winding up.
+    fn guardian(g: &mut Game, kind: EnemyKind, dx: f32) -> usize {
+        let mut e = Enemy::new(g.player.pos.x + dx, g.player.pos.y, kind, Threat::BASE);
+        e.timer = 0.;
+        g.level.enemies.push(e);
+        g.level.enemies.len() - 1
+    }
+    fn tells(g: &Game) -> usize {
+        g.sounds.iter().filter(|s| **s == Sfx::Tell).count()
+    }
+    #[test]
+    fn windups_sound_a_tell_once_and_only_on_screen() {
+        let mut g = game();
+        g.place_player(vec2(900., FLOOR));
+        guardian(&mut g, EnemyKind::Warden, 25.);
+        g.tick(STEP, Input::default());
+        assert!(g.level.enemies[0].windup > 0.);
+        assert_eq!(tells(&g), 1);
+        for _ in 0..60 {
+            g.tick(STEP, Input::default());
+        }
+        assert_eq!(tells(&g), 1, "one tell per windup");
+
+        // Two guardians starting together, or within the gap, make one tell;
+        // a later windup makes another.
+        let mut g = game();
+        g.place_player(vec2(900., FLOOR));
+        guardian(&mut g, EnemyKind::Warden, 25.);
+        guardian(&mut g, EnemyKind::Warden, -25.);
+        let late = guardian(&mut g, EnemyKind::Brute, 40.);
+        g.level.enemies[late].timer = TELL_GAP / 2.;
+        for _ in 0..30 {
+            g.tick(STEP, Input::default());
+        }
+        assert!(g
+            .level
+            .enemies
+            .iter()
+            .all(|e| e.windup > 0. || e.timer > 0.));
+        assert_eq!(tells(&g), 1, "windups within the gap share a tell");
+        let mut g = game();
+        g.place_player(vec2(900., FLOOR));
+        guardian(&mut g, EnemyKind::Warden, 25.);
+        let late = guardian(&mut g, EnemyKind::Brute, 40.);
+        g.level.enemies[late].timer = TELL_GAP + 0.05;
+        for _ in 0..60 {
+            g.tick(STEP, Input::default());
+        }
+        assert_eq!(tells(&g), 2);
+
+        // An archer drawing on the hero from beyond the left edge is silent.
+        let mut g = game();
+        g.place_player(vec2(900., FLOOR));
+        let archer = guardian(&mut g, EnemyKind::Archer, -290.);
+        g.tick(STEP, Input::default());
+        assert!(g.level.enemies[archer].windup > 0.);
+        assert!(g.level.enemies[archer].pos.x < g.camera);
+        assert_eq!(tells(&g), 0);
+    }
+    #[test]
+    fn strikes_land_only_inside_the_warned_reach() {
+        for kind in [EnemyKind::Warden, EnemyKind::Brute, EnemyKind::Regent] {
+            let reach = kind.strike_reach();
+            for (dx, dy, lands) in [
+                (reach.x - 2., 0., true),
+                (reach.x + 2., 0., false),
+                (-(reach.x - 2.), 0., true),
+                (0., reach.y - 2., true),
+                (0., reach.y + 2., false),
+            ] {
+                let mut g = game();
+                g.place_player(vec2(900., FLOOR));
+                let i = guardian(&mut g, kind, dx);
+                // Guardians keep to their ledge, so the hero rises instead.
+                g.player.pos.y -= dy;
+                g.player.ground = false;
+                let e = &mut g.level.enemies[i];
+                e.windup = STEP / 2.;
+                // The Regent's every third attack is a volley instead.
+                e.phase = 0;
+                let hp = g.player.hp;
+                g.tick(STEP, Input::default());
+                assert_eq!(g.player.hp < hp, lands, "{kind:?} at {dx}, {dy}");
+            }
+        }
     }
     #[test]
     fn visual_effects_do_not_advance_gameplay_rng() {

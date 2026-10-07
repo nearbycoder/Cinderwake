@@ -87,7 +87,27 @@ def more_effects():
         return sweep*(1-u)**2+thump
     render('finisher',.28,finisher,.45)
 
-EFFECTS=['slash','hit','jump','dodge','parry','loot','hurt','explosion','heal','kill','bolt','throw','bank','select','deny','finisher']
+# Round 6: a guardian's windup warning. Its own random stream again, so
+# every earlier file regenerates byte for byte.
+def tell_effect():
+    rng=random.Random(29)
+    # Two quick ratchet clicks of a winding spring, the second higher, over a
+    # short rising whine: bright enough to cut through combat, and unlike any
+    # strike, menu, or pickup sound.
+    def click(s, base):
+        if s<0: return 0.
+        ring=sum(a*math.sin(TAU*base*m*s) for m,a in [(1,1),(1.63,.55),(2.47,.3)])
+        return ring*math.exp(-s*70)*min(1,s*4000)+rng.uniform(-1,1)*math.exp(-s*400)*.5
+    ph=[0.]
+    def tell(t,u):
+        ph[0]+=TAU*(700+500*u)/rate
+        whine=math.sin(ph[0])*math.sin(math.pi*u)**2*.35
+        return click(t,1900)+click(t-.075,2400)+whine
+    samples=[tell(i/rate, i/rate/.22) for i in range(int(rate*.22))]
+    top=max(abs(v) for v in samples)
+    write('tell',[v*.44/top for v in samples])
+
+EFFECTS=['slash','hit','jump','dodge','parry','loot','hurt','explosion','heal','kill','bolt','throw','bank','select','deny','finisher','tell']
 
 def effect_report(name):
     x,r=read(out/(name+'.wav'))
@@ -349,6 +369,7 @@ if __name__=='__main__':
         sys.exit(1 if any([check(Path(p)) for p in sys.argv[2:]]) else 0)
     effects()
     more_effects()
+    tell_effect()
     if any([effect_report(name) for name in EFFECTS]):
         sys.exit(1)
     for make in (hearth,aqueduct,conservatory,foundry,crown):
