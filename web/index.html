@@ -23,6 +23,14 @@
   <script src="cinderwake-storage.js"></script>
   <script src="cinderwake-pad.js"></script>
   <script>
+    // Miniquad's loader keeps Space, the arrows, Tab, and F1–F10 from reaching
+    // the browser, but not F11, which would then toggle the browser's own
+    // fullscreen as well as the game's. The game handles F11 itself.
+    document.getElementById("glcanvas").addEventListener("keydown", (e) => {
+      if (e.code === "F11") e.preventDefault();
+    });
+  </script>
+  <script>
     load("cinderwake.wasm");
     // The game draws its first frame once embedded art has been decoded.
     (function hide() {
