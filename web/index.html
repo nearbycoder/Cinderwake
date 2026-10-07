@@ -29,6 +29,18 @@
     document.getElementById("glcanvas").addEventListener("keydown", (e) => {
       if (e.code === "F11") e.preventDefault();
     });
+    // The loader calls these without handling a refusal, which then shows as
+    // an uncaught error. The game notices a refusal itself and says so, so
+    // these note it quietly. They call the browser's own functions each time.
+    const quietly = (name) => (error) => console.info(`${name} was refused: ${error && error.message}`);
+    document.getElementById("glcanvas").requestFullscreen = function (...args) {
+      const asked = HTMLCanvasElement.prototype.requestFullscreen.apply(this, args);
+      return asked && asked.catch ? asked.catch(quietly("Fullscreen")) : asked;
+    };
+    document.exitFullscreen = function (...args) {
+      const asked = Document.prototype.exitFullscreen.apply(this, args);
+      return asked && asked.catch ? asked.catch(quietly("Leaving fullscreen")) : asked;
+    };
   </script>
   <script>
     load("cinderwake.wasm");
