@@ -34,7 +34,8 @@ You are a small brass automaton in a city of copper, glass, and failing machiner
 - **A branching run.** Four biome themes, three stages per run, four guardian types, and a final fight against the Brass Regent.
 - **Choices that carry weight.** Three melee weapons, weapon tiers and scorching upgrades, three stat disciplines, two run mutations, copper forging, and permanent vitality and flask upgrades.
 - **A city in motion.** Layered panoramas change with horizontal progress and elevation. Waterwheels turn, cloth sways, steam rises, and each biome has its own atmosphere.
-- **Detailed pixel presentation.** Generated sprite sheets, action-synchronized animation, dodge afterimages, hit stop, camera shake, event-driven particles, selective bloom, and dynamic combat lighting. The HUD remains crisp above the effects.
+- **Detailed pixel presentation.** Generated sprite sheets, action-synchronized animation, dodge afterimages, hit stop, camera shake, event-driven particles, selective bloom, and dynamic combat lighting. The HUD remains crisp above the effects, menus ease into place, and the vitality bar shows what each hit took.
+- **A Graphics Fidelity setting.** Four steps, Low to Ultra, on the options page or **F9**. Low drops post-processing for slower graphics; High is the game's usual look and the default; Ultra draws the world at twice the resolution and filters it down, samples the art from mipmaps, lets lamps, forges, wells, and the bellgate light their surroundings, and adds a wider bloom and denser sparks. From Medium up, the scene keeps even pixels at fractional window sizes.
 
 ## A city with depth
 
@@ -163,7 +164,7 @@ These are the default keys. Gameplay keys can be rebound under **O** → **Contr
 | **X** twice | Abandon the run, from the pause screen |
 | **Esc** twice on the title, **Q** twice when paused | Quit the desktop game (a run in progress continues from its last checkpoint, if it has one) |
 | **M** | Mute / unmute |
-| **F9** | Toggle world lighting and bloom |
+| **F9** | Step through graphics fidelity: Low, Medium, High, Ultra |
 | **F11** | Fullscreen (remembered on desktop; also on the options page) |
 | **F12** | Save a screenshot to `captures/` |
 
@@ -194,9 +195,9 @@ Cinderwake uses a **custom game framework on Macroquad**. Rust owns the fixed-st
 | Simulation | 120 Hz fixed step, drawn between steps so motion stays even at any refresh rate; seeded generation; presentation separated from gameplay randomness |
 | World | Authored three-tier routes; one-way platforms; two-dimensional camera; route and support validation |
 | Animation | 32 selected hero frames, 32 guardian frames, and eight Regent frames; movement-driven strides and simulation-timed actions |
-| Particles | A bounded pool of 512 particles; sparks, debris, smoke, dust, motes, shockwaves, and flashes |
-| Rendering | 640 × 360 world coordinates rendered at 1280 × 720, with nearest-neighbor sampling |
-| Post-processing | Separable selective bloom, biome grading, vignette, and up to eight dynamic combat lights; unfiltered fallback |
+| Particles | A bounded pool of 512 particles (256 at Low, 1,024 at Ultra); sparks, debris, smoke, dust, motes, shockwaves, and flashes |
+| Rendering | 640 × 360 world coordinates rendered at 1280 × 720 with nearest-neighbor sampling, or at 2560 × 1440 with mipmapped art at Ultra; scaled to the window with even pixels |
+| Post-processing | Separable selective bloom, biome grading, vignette, and up to eight dynamic combat lights; at Ultra sixteen lights including the scenery's, a second wide bloom, sharpening, and a soft highlight roll-off; four fidelity steps; unfiltered fallback |
 | Persistence | Version-tolerant JSON; atomic file replacement; unreadable files kept aside; isolated practice modes |
 
 The [engine guide](docs/ENGINE.md) includes the source map, rendering pipeline, asset workflow, save behavior, verification commands, and reproducible capture modes.
@@ -205,7 +206,7 @@ The [engine guide](docs/ENGINE.md) includes the source map, rendering pipeline, 
 
 **A playable prototype under active development.** The core run loop, vertical exploration, combat, progression, and visual systems are implemented. This is an original project inspired by the action-roguelite genre, not a claim of feature parity with Dead Cells.
 
-The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, lighting, tips, fullscreen, and a game speed from 50% to 100% for players who need more time to react; those choices are saved separately from progress. Gameplay keys can be rebound, and every menu also works with the mouse alone, highlighting what the cursor points at and describing clicks in its hints while the mouse is in use; the cursor hides during play. Guardians and bolts that threaten from out of view are marked at the screen's edge, and low vitality tints the screen's edges. Controllers work with a fixed layout, tested only with simulated devices. The game pauses itself when its window or tab loses focus or a controller is removed, and the desktop game can be quit from the title and pause screens. On Linux the desktop window reopens at its last size. Play (particles and damage numbers included) is drawn between simulation steps, so motion stays even on displays faster or slower than the game's 120 steps per second, and holding a direction on the options and controls pages keeps adjusting. Presses made a moment early are kept, and the HUD marks presses that couldn't happen. Broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas fills in as you explore, with the bellgate always marked. See [current boundaries](docs/ENGINE.md#current-boundaries).
+The current scope is deliberately visible: one final boss, an authored route structure, a small equipment pool, shared blade artwork across melee weapons, and reused poses for some skills. One-time tips teach each mechanic the first time it matters. An options page covers music and effects volume, screen-shake intensity, hit-stop, reduced flashes, graphics fidelity (Low, Medium, High, Ultra), tips, fullscreen, and a game speed from 50% to 100% for players who need more time to react; those choices are saved separately from progress. Gameplay keys can be rebound, and every menu also works with the mouse alone, highlighting what the cursor points at and describing clicks in its hints while the mouse is in use; the cursor hides during play. Guardians and bolts that threaten from out of view are marked at the screen's edge, and low vitality tints the screen's edges. Controllers work with a fixed layout, tested only with simulated devices. The game pauses itself when its window or tab loses focus or a controller is removed, and the desktop game can be quit from the title and pause screens. On Linux the desktop window reopens at its last size. Play (particles and damage numbers included) is drawn between simulation steps, so motion stays even on displays faster or slower than the game's 120 steps per second, and holding a direction on the options and controls pages keeps adjusting. Presses made a moment early are kept, and the HUD marks presses that couldn't happen. Broader accessibility options, localization, broader progression, and production-level balancing are not implemented. The atlas fills in as you explore, with the bellgate always marked. See [current boundaries](docs/ENGINE.md#current-boundaries).
 
 To check a change locally:
 
