@@ -690,6 +690,19 @@ impl Ui {
             Rect::new(838., 649., 40., 44.),
             if p.flasks == 0 { 0.4 } else { 1. },
         );
+        // A drink in progress fills the slot from the bottom.
+        if p.heal_time > 0. {
+            let filled = 52. * (1. - p.heal_time / DRINK_TIME).clamp(0., 1.);
+            draw_rectangle(834., 698. - filled, 48., filled, c(TEAL).with_alpha(0.3));
+            draw_line(
+                834.,
+                698. - filled,
+                882.,
+                698. - filled,
+                1.5,
+                c(TEAL).with_alpha(0.8),
+            );
+        }
         let flask_refused = p.refusal(Slot::Flask);
         self.refusal(
             Rect::new(834., 646., 48., 52.),
@@ -699,7 +712,8 @@ impl Ui {
         self.key(prompts.action(Action::Heal), 844., 683.);
         self.text("HEALING FLASK", 886., 665., 14., c(PALE));
         if flask_refused > 0. {
-            self.text(p.flask_note, 888., 691., 18., c(REFUSED));
+            let size = if p.flask_note.len() > 6 { 14. } else { 18. };
+            self.text(p.flask_note, 888., 691., size, c(REFUSED));
         } else {
             self.text(
                 &format!("{} / {}", p.flasks, 2 + g.save.flask),

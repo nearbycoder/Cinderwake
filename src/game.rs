@@ -276,6 +276,11 @@ pub enum Slot {
     Parry,
     Dodge,
 }
+/// Seconds a flask takes to drink.
+pub const DRINK_TIME: f32 = 0.8;
+/// A drink cut short is marked twice as long as a refused press, so its
+/// note can be read.
+pub const INTERRUPTED_SHOW: f32 = REFUSAL_SHOW * 2.;
 /// Copper the forge asks to temper a weapon.
 pub const FORGE_COST: u32 = 60;
 /// Guardians to fell before a sealed cache opens without the Crown Rune.
@@ -774,6 +779,11 @@ impl Game {
         self.cause = cause;
         p.invuln = 0.9;
         p.vel.x = dir * 190.;
+        // A drink cut short keeps its flask; the flask's slot says so.
+        if p.heal_time > 0. {
+            p.refused[Slot::Flask as usize] = INTERRUPTED_SHOW;
+            p.flask_note = "INTERRUPTED";
+        }
         p.heal_time = 0.;
         self.shake = 7.;
         self.sounds.push(Sfx::Hurt);
@@ -1251,7 +1261,7 @@ impl Game {
             p.vel.y = 600.;
         }
         if input.heal && p.flasks > 0 && p.hp < p.max_hp && p.heal_time <= 0. {
-            p.heal_time = 0.8;
+            p.heal_time = DRINK_TIME;
         }
         if p.heal_time > 0. {
             p.heal_time -= dt;
@@ -4329,5 +4339,46 @@ mod tests {
         }
         assert_eq!(g.notice_alpha(), 0.);
         assert!(shown.abs_diff(steps(notice_seconds(lore))) <= 1);
+    }
+    #[test]
+    fn a_drink_cut_short_says_so_and_keeps_its_flask() {
+        let heal = Input {
+            heal: true,
+            ..Default::default()
+        };
+        let mut g = quiet();
+        g.player.hp = 40.;
+        let flasks = g.player.flasks;
+        g.tick(STEP, heal);
+        for _ in 0..30 {
+            g.tick(STEP, Input::default());
+        }
+        assert!(g.player.heal_time > 0.);
+        g.hurt(5., 1., Cause::Hazard);
+        assert_eq!(marked(&g), vec![Slot::Flask]);
+        assert_eq!(g.player.flask_note, "INTERRUPTED");
+        assert_eq!(g.player.flasks, flasks, "the flask isn't spent");
+        assert_eq!(g.player.hp, 35.);
+        // It stays at full strength long enough to read, then fades.
+        for _ in 0..(REFUSAL_SHOW / STEP) as usize {
+            g.tick(STEP, Input::default());
+        }
+        assert!(g.player.refusal(Slot::Flask) > 0.99);
+        for _ in 0..(REFUSAL_SHOW / STEP) as usize + 4 {
+            g.tick(STEP, Input::default());
+        }
+        assert!(marked(&g).is_empty(), "{:?}", marked(&g));
+        // A drink that finishes marks nothing, and neither does a hit
+        // while not drinking.
+        let mut g = quiet();
+        g.player.hp = 40.;
+        g.tick(STEP, heal);
+        for _ in 0..(DRINK_TIME / STEP) as usize + 2 {
+            g.tick(STEP, Input::default());
+        }
+        assert_eq!(g.player.flasks, flasks - 1);
+        g.player.invuln = 0.;
+        g.hurt(5., 1., Cause::Hazard);
+        assert!(marked(&g).is_empty());
     }
 }

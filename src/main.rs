@@ -587,7 +587,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 39] = [
+const UI_GALLERY_NAMES: [&str; 41] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -627,6 +627,8 @@ const UI_GALLERY_NAMES: [&str; 39] = [
     "ui-36-forge-short-of-copper",
     "ui-37-atlas-marks",
     "ui-38-notice-in-play",
+    "ui-39-flask-drinking",
+    "ui-40-flask-interrupted",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -982,6 +984,16 @@ fn ui_fixture(index: usize) -> Game {
             }
             g.notify("The smith asks for 60 copper to temper your weapon.");
             g.notice_time = 3.;
+        }
+        // A flask half drunk, and one a hit cut short.
+        39 => {
+            g.player.hp = 52.;
+            g.player.heal_time = game::DRINK_TIME * 0.45;
+        }
+        40 => {
+            g.player.hp = 47.;
+            g.player.heal_time = game::DRINK_TIME * 0.45;
+            g.hurt(5., -1., game::Cause::Hazard);
         }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
