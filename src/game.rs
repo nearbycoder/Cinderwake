@@ -109,6 +109,12 @@ impl Hint {
 pub const HINT_SECONDS: f32 = 6.;
 /// Seconds before the death and victory screens accept confirming.
 pub const RESULT_DELAY: f32 = 1.;
+/// How far a long fall raises the hero in the view, in world units.
+pub const FALL_LEAD: f32 = 125.;
+/// Seconds of holding down while standing still before the view looks below,
+/// and how far down the view the hero then stands, in world units.
+pub const LOOK_HOLD: f32 = 0.4;
+pub const LOOK_AT: f32 = 136.;
 /// Shortest gap between two windup tells.
 pub const TELL_GAP: f32 = 0.2;
 /// What ended a run.
@@ -458,6 +464,12 @@ pub struct Game {
     pub traps: Vec<Trap>,
     pub camera: f32,
     pub camera_y: f32,
+    /// The height the hero last stood on; falling below it leads the camera.
+    pub footing: f32,
+    /// How far the view is eased below its usual place while looking down,
+    /// and how long down has been held while standing still.
+    pub look: f32,
+    look_hold: f32,
     pub shake: f32,
     pub hitstop: f32,
     pub time: f32,
@@ -609,6 +621,9 @@ impl Game {
             traps: vec![],
             camera: 0.,
             camera_y,
+            footing: last_safe_pos.y,
+            look: 0.,
+            look_hold: 0.,
             shake: 0.,
             hitstop: 0.,
             time: 0.,
@@ -697,6 +712,8 @@ impl Game {
         self.last_safe_pos = pos;
         self.camera = (pos.x - 250. + 35.).clamp(0., (self.level.width - 640.).max(0.));
         self.camera_y = (pos.y - 248.).clamp(self.level.min_y, self.level.max_y - 360.);
+        self.footing = pos.y;
+        self.look = 0.;
         self.survey
             .reveal(Rect::new(self.camera, self.camera_y, 640., 360.));
     }
@@ -1423,6 +1440,8 @@ impl Game {
             self.player.dodge = 0.;
             self.camera_y =
                 (self.player.pos.y - 230.).clamp(self.level.min_y, self.level.max_y - 360.);
+            self.footing = self.player.pos.y;
+            self.look = 0.;
             self.notify("The updraft carries you back to the last safe ledge.");
         } else if self.player.ground
             && !self
@@ -1436,22 +1455,52 @@ impl Game {
         if input.interact && self.screen == Screen::Playing {
             self.interact();
         }
-        let target = (self.player.pos.x - 250. + self.player.face * 35.)
-            .clamp(0., (self.level.width - 640.).max(0.));
-        self.camera += (target - self.camera) * (dt * 6.).min(1.);
-        let screen_y = self.player.pos.y - self.camera_y;
-        let target_y = if screen_y < 132. {
-            self.player.pos.y - 132.
-        } else if screen_y > 248. {
-            self.player.pos.y - 248.
-        } else {
-            self.camera_y
+        self.follow(dt, input.down && !input.jump && input.axis == 0.);
+    }
+    /// Moves the camera after the hero: horizontally a little ahead of where
+    /// it faces, and vertically with a dead zone so jumps don't move it. A
+    /// fall below the height last stood on is led, so the ground below shows
+    /// before the landing instead of the hero sinking behind the HUD, and
+    /// holding down while standing still eases the view below the ledge.
+    fn follow(&mut self, dt: f32, holding_down: bool) {
+        let p = &self.player;
+        if p.ground {
+            self.footing = p.pos.y;
         }
-        .clamp(self.level.min_y, self.level.max_y - 360.);
-        self.camera_y += (target_y - self.camera_y) * (dt * 7.).min(1.);
-        self.camera_y = self
-            .camera_y
-            .clamp(self.level.min_y, self.level.max_y - 360.);
+        let target = (p.pos.x - 250. + p.face * 35.).clamp(0., (self.level.width - 640.).max(0.));
+        self.camera += (target - self.camera) * (dt * 6.).min(1.);
+        let (top, bottom) = (self.level.min_y, self.level.max_y - 360.);
+        // How far into a fall below the footing, from 0 to 1. Jumps that
+        // come back to the same floor never get here.
+        let fall = ((p.pos.y - self.footing - 16.) / 64.).clamp(0., 1.);
+        let low = 248. - FALL_LEAD * fall;
+        let base = self.camera_y - self.look;
+        let screen_y = p.pos.y - base;
+        let target_y = if screen_y < 132. {
+            p.pos.y - 132.
+        } else if screen_y > low {
+            // Following eases, so it trails a steady fall by speed / 7;
+            // aiming that far ahead keeps the hero where it's put.
+            p.pos.y - low + p.vel.y.max(0.) / 7. * fall
+        } else {
+            base
+        }
+        .clamp(top, bottom);
+        let base = (base + (target_y - base) * (dt * 7.).min(1.)).clamp(top, bottom);
+        self.look_hold = if holding_down && p.ground && p.dodge <= 0. {
+            self.look_hold + dt
+        } else {
+            0.
+        };
+        let look = if self.look_hold >= LOOK_HOLD {
+            (p.pos.y - LOOK_AT - base).max(0.)
+        } else {
+            0.
+        };
+        let eased = self.look + (look - self.look) * (dt * 5.).min(1.);
+        self.camera_y = (base + eased).clamp(top, bottom);
+        // Near the bottom of a level the view can't go as far down.
+        self.look = self.camera_y - base;
         self.survey
             .reveal(Rect::new(self.camera, self.camera_y, 640., 360.));
     }
@@ -2073,6 +2122,8 @@ impl Game {
         self.camera = 0.;
         self.camera_y =
             (self.level.spawn.y - 248.).clamp(self.level.min_y, self.level.max_y - 360.);
+        self.footing = self.level.spawn.y;
+        self.look = 0.;
         self.survey = Survey::new(&self.level);
         self.survey.reveal(Rect::new(0., self.camera_y, 640., 360.));
         self.intro = 4.;
@@ -4100,5 +4151,132 @@ mod tests {
             assert!(g.camera_y < -100.);
             assert_eq!(g.player.hp, g.player.max_hp);
         }
+    }
+    /// The bottom of the part of the view the HUD leaves clear, in world units.
+    const CLEAR_BOTTOM: f32 = 317.;
+    #[test]
+    fn a_long_fall_is_led_so_the_landing_shows_before_it() {
+        // The undercroft is the level's bottom, where the view stops short.
+        for (from, landing, open_below) in
+            [(Level::UPPER, FLOOR, true), (FLOOR, Level::LOWER, false)]
+        {
+            let mut g = game();
+            g.level.platforms = vec![
+                Rect::new(0., from, 400., 12.),
+                Rect::new(0., landing, 400., 12.),
+            ];
+            g.place_player(vec2(200., from));
+            g.tick(
+                STEP,
+                Input {
+                    down: true,
+                    jump: true,
+                    ..Default::default()
+                },
+            );
+            let (mut steps, mut landing_seen) = (0, None);
+            while !g.player.ground {
+                g.tick(STEP, Input::default());
+                steps += 1;
+                let feet = g.player.pos.y - g.camera_y;
+                assert!(feet < CLEAR_BOTTOM - 50., "the hero sank to {feet}");
+                if g.player.vel.y >= 600. && open_below {
+                    assert!(
+                        CLEAR_BOTTOM - feet >= 150.,
+                        "only {} units show below at full speed",
+                        CLEAR_BOTTOM - feet
+                    );
+                }
+                if landing_seen.is_none() && landing - g.camera_y < CLEAR_BOTTOM {
+                    landing_seen = Some(steps);
+                }
+            }
+            assert_eq!(g.player.pos.y, landing);
+            let early = (steps - landing_seen.unwrap()) as f32 * STEP;
+            assert!(early >= 0.25, "the landing showed only {early} s before it");
+            // Once down, the camera rests rather than swinging back.
+            let rest = g.camera_y;
+            for _ in 0..240 {
+                g.tick(STEP, Input::default());
+            }
+            assert!((g.camera_y - rest).abs() < 0.01);
+        }
+    }
+    #[test]
+    fn jumps_on_one_floor_still_leave_the_camera_alone() {
+        let mut g = game();
+        g.level.platforms = vec![Rect::new(0., FLOOR, 2000., 12.)];
+        g.place_player(vec2(200., FLOOR));
+        let rest = g.camera_y;
+        for step in 0..360 {
+            g.tick(
+                STEP,
+                Input {
+                    jump: step == 0 || step == 30,
+                    jump_held: step < 60,
+                    axis: 1.,
+                    ..Default::default()
+                },
+            );
+            assert_eq!(g.camera_y, rest, "step {step}");
+        }
+        assert!(g.player.ground);
+    }
+    #[test]
+    fn holding_down_while_standing_looks_below_and_lets_go() {
+        let mut g = game();
+        g.level.platforms = vec![Rect::new(0., FLOOR, 600., 12.)];
+        g.place_player(vec2(200., FLOOR));
+        let rest = g.camera_y;
+        let down = Input {
+            down: true,
+            ..Default::default()
+        };
+        for _ in 0..(LOOK_HOLD / STEP) as usize - 2 {
+            g.tick(STEP, down);
+        }
+        assert_eq!(g.camera_y, rest, "a short press doesn't look");
+        for _ in 0..240 {
+            g.tick(STEP, down);
+        }
+        assert!((g.player.pos.y - g.camera_y - LOOK_AT).abs() < 0.5);
+        assert!(g.camera_y - rest > 100., "it looks well below");
+        assert_eq!(g.player.pos.y, FLOOR, "looking doesn't drop or slam");
+        for _ in 0..240 {
+            g.tick(STEP, Input::default());
+        }
+        assert!((g.camera_y - rest).abs() < 0.5, "letting go looks back");
+        // Moving while holding down doesn't look.
+        for _ in 0..240 {
+            g.tick(
+                STEP,
+                Input {
+                    down: true,
+                    axis: 1.,
+                    ..Default::default()
+                },
+            );
+        }
+        assert!((g.camera_y - rest).abs() < 0.5);
+        // Down and jump still drop through a ledge after looking.
+        g.level
+            .platforms
+            .push(Rect::new(0., FLOOR + 120., 600., 12.));
+        for _ in 0..240 {
+            g.tick(STEP, down);
+        }
+        g.tick(
+            STEP,
+            Input {
+                down: true,
+                jump: true,
+                ..Default::default()
+            },
+        );
+        for _ in 0..120 {
+            g.tick(STEP, Input::default());
+        }
+        assert_eq!(g.player.pos.y, FLOOR + 120.);
+        assert!(g.look < 1., "dropping eases the look back");
     }
 }

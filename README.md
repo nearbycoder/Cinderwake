@@ -30,7 +30,7 @@ You are a small brass automaton in a city of copper, glass, and failing machiner
 ## What you can play
 
 - **Responsive combat, on keyboard or controller.** Chain melee strikes, reflect projectiles with directional parries, dodge through danger, fire glassbolts, throw fire vessels, and deploy arc snares. A press made a moment before its move is ready (up to 0.15 s) still happens as soon as it is. A press that comes too early, or a flask with none left, briefly outlines its slot on the HUD, and the dodge and parry show their recovery like the other slots. Every guardian warns before it attacks: a mark over its head, the reach of its strike on the ground or the line of an archer's aim, and a short sound. One winding up out of view, or a bolt flying in from off screen, gets a marker at the edge of the screen pointing toward it, and at low vitality the screen's edges glow red and the flask slot lights up.
-- **Three elevations to explore.** Double jump into upper galleries, drop through ledges into the undercroft, and find connected routes back to the surface. A two-axis camera and full-height atlas follow the journey.
+- **Three elevations to explore.** Double jump into upper galleries, drop through ledges into the undercroft, and find connected routes back to the surface. A two-axis camera and full-height atlas follow the journey: the camera runs ahead of a fall so you see where you'll land, and holding down while standing looks below the ledge.
 - **A branching run.** Four biome themes, three stages per run, four guardian types, and a final fight against the Brass Regent.
 - **Choices that carry weight.** Three melee weapons, weapon tiers and scorching upgrades, three stat disciplines, two run mutations, copper forging, and permanent vitality and flask upgrades.
 - **A city in motion.** Layered panoramas change with horizontal progress and elevation. Waterwheels turn, cloth sways, steam rises, and each biome has its own atmosphere.
@@ -147,6 +147,7 @@ These are the default keys. Gameplay keys can be rebound under **O** → **Contr
 | **Space / W / ↑** | Jump; press again for a double jump |
 | **S / ↓ + Space** on a ledge | Drop through that ledge |
 | **S / ↓** while falling | Ground slam |
+| **S / ↓** held while standing still | Look below the ledge |
 | **J** or **left mouse** | Melee combo; hold to repeat. In menus, a left click chooses a button, card, row, or link, so every menu works with the mouse alone |
 | **K** | Fire glassbolt |
 | **Shift** | Dodge with brief invulnerability |
@@ -172,7 +173,7 @@ Buttons use Xbox names; on other pads, **A** is the bottom face button, **B** th
 
 | Button | In play | In menus |
 | --- | --- | --- |
-| **Left stick** or **D-pad** | Move; push down to drop through a ledge (with **A**) or to slam in mid-air | Move between rows; change a setting; choose a route |
+| **Left stick** or **D-pad** | Move; push down to drop through a ledge (with **A**) or to slam in mid-air; hold down while standing still to look below | Move between rows; change a setting; choose a route |
 | **A** | Jump; press again for a double jump | Confirm, start, or continue |
 | **X** | Melee combo; hold to repeat | First choice (memory, reliquary weapon, Keeper upgrade); new descent on the title; abandon run (twice) when paused |
 | **Y** | Interact | Second choice; options on the title and pause screens |
