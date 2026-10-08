@@ -1,18 +1,18 @@
 # Showcase media
 
-All images are actual Cinderwake runtime captures at 1280 × 720.
+Everything here is drawn by Cinderwake itself at graphics fidelity **Ultra**, recorded at 1920 × 1080 inside a private nested KWin by [`scripts/record-trailer.sh`](../../scripts/record-trailer.sh) and edited by [`scripts/trailer.py`](../../scripts/trailer.py). The captures run at fixed simulated time, one frame per step of the script, so Ultra keeps every frame however long each takes to draw.
 
 | File | What it shows |
 | --- | --- |
-| `rooftops.png` | Upper-gallery traversal, captured from ordinary movement inputs. |
-| `undercroft.png` | The underground route with its own depth panorama. |
-| `combat.png` | Live scripted combat in the undercroft. |
-| `atlas.png` | Staged interface fixture showing the full three-tier map. |
-| `foundry.png` | Staged Ember Foundry scene. |
-| `crown.png` | Staged Crown of the Machine scene and Regent encounter. |
-| `demo.gif` | Silent excerpt from the navigation portion of the full demo. |
-| `cinderwake-demo.mp4` | 40.25-second demo: 0:00–0:15 live scripted combat, then 0:15–0:40.25 ordinary-input traversal with enemies and hazards disabled. |
+| `cinderwake-demo.mp4` | The 43-second trailer, 1920 × 1080 at 30 fps, H.264 and AAC, loudness −16 LUFS. Sections: the title screen; 11 s of the `--motion-capture` fight (scripted input, live physics and combat); three excerpts of the `--vertical-capture` route with guardians and hazards removed; 2.2 s of each biome from the `--environment-tour` camera tour; the staged Regent arena; the reliquary, Keeper, and options screens from `--ui-gallery`; and an end card over a dimmed frame of the Crown. |
+| `demo.gif` | Six seconds of the same fight, without captions or sound, 560 pixels wide at 12 fps. |
+| `combat.png` | The scripted fight: a guardian winding up with its warning mark and reach shown. |
+| `rooftops.png` | The upper galleries, from the route's ordinary movement inputs. |
+| `undercroft.png` | The undercroft on the same route. |
+| `foundry.png` | The Ember Foundry from the staged camera tour. |
+| `crown.png` | The staged Crown of the Machine view with the Brass Regent (`--gallery`). |
+| `atlas.png` | The staged atlas fixture with every kind of object marked, fully surveyed. |
 
-The video is assembled from the current `--motion-capture` and `--vertical-capture` PNG sequences, encoded at 20 fps in H.264/AAC. Its soundtrack is the project's original synthesized ambient loop, the single music track used before round 3 of the improvements; it does not contain the live sound-effects mix. There are no concept-art substitutes or simulated UI overlays. Practice and capture modes do not read or write player progression.
+The trailer's soundtrack is the game's own: each section's biome loop (the hearth loop for the title and menus) at the default music volume and, under the fight and the route, the sound effects those frames played at the default effects volume, read from the `cues.txt` the `--trailer` captures write. There is no narration. Captions, fades, and the end card's text are the only things added in the edit; there are no concept-art substitutes or simulated interface overlays. The screenshots are scaled to 1280 × 720 and reduced to 256 colours. Capture modes do not read or write player progression.
 
-See [the engine guide](../ENGINE.md#verification-and-capture) for capture commands. Source artwork and ImageGen prompts live in [`assets/`](../../assets/); the footage uses those assets rendered by the Rust engine.
+See [the engine guide](../ENGINE.md#recording-the-trailer) for the commands. Source artwork and ImageGen prompts live in [`assets/`](../../assets/); the footage uses those assets rendered by the Rust engine.
