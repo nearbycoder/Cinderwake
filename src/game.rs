@@ -239,6 +239,52 @@ pub struct Player {
     pub embers: u32,
     pub kills: u32,
     pub mutation: u32,
+    /// Presses made just before their action was ready, kept until it is.
+    pub queued: Queued,
+    /// Whether strike and glassbolt were held last step, so a fresh press
+    /// can be told apart from a hold.
+    pub held: [bool; 2],
+}
+/// How long before an action is ready a press of it is kept rather than
+/// dropped. Jumping keeps its own, shorter buffer (`Player::buffer`).
+pub const PRESS_BUFFER: f32 = 0.15;
+/// Seconds each early press has left before it's dropped.
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct Queued {
+    pub dodge: f32,
+    pub parry: f32,
+    pub strike: f32,
+    pub bolt: f32,
+    pub grenade: f32,
+    pub trap: f32,
+}
+impl Queued {
+    fn tick(&mut self, dt: f32) {
+        for t in [
+            &mut self.dodge,
+            &mut self.parry,
+            &mut self.strike,
+            &mut self.bolt,
+            &mut self.grenade,
+            &mut self.trap,
+        ] {
+            *t = (*t - dt).max(0.);
+        }
+    }
+}
+/// Keeps a press of an action that is `wait` seconds from ready, if that's
+/// within `PRESS_BUFFER`. Returns false for a press too early to keep.
+fn queue(timer: &mut f32, pressed: bool, wait: f32) -> bool {
+    if !pressed || wait <= 0. {
+        return true;
+    }
+    if wait > PRESS_BUFFER {
+        return false;
+    }
+    // A little longer than the wait, so the press is still there on the
+    // step its action becomes ready.
+    *timer = wait + 0.02;
+    true
 }
 impl Player {
     pub fn new(save: &Save) -> Self {
@@ -275,6 +321,8 @@ impl Player {
             embers: 0,
             kills: 0,
             mutation: 0,
+            queued: Queued::default(),
+            held: [false; 2],
         }
     }
     /// The run mutation bought from the Keeper, if any.
@@ -972,6 +1020,8 @@ impl Game {
     }
     pub fn tick(&mut self, dt: f32, input: Input) {
         if self.screen.freezes_world() {
+            // Menus discard pending presses, early ones included.
+            self.player.queued = Queued::default();
             return;
         }
         if self.screen == Screen::Playing {
@@ -1023,6 +1073,24 @@ impl Game {
             p.grenade_cd = (p.grenade_cd - dt * 0.35).max(0.);
             p.trap_cd = (p.trap_cd - dt * 0.35).max(0.);
         }
+        // Presses made a moment before their action is ready are kept until
+        // it is. Strike and glassbolt repeat while held, so only a fresh
+        // press of either is kept, and releasing never adds a swing.
+        p.queued.tick(dt);
+        let rate = if p.mutation == 2 { 1.35 } else { 1. };
+        let fresh = [input.attack && !p.held[0], input.bow && !p.held[1]];
+        p.held = [input.attack, input.bow];
+        let q = &mut p.queued;
+        queue(&mut q.dodge, input.dodge, p.dodge_cd.max(p.heal_time));
+        queue(&mut q.parry, input.parry, p.parry_cd);
+        queue(
+            &mut q.strike,
+            fresh[0],
+            p.attack_cd.max(p.dodge).max(p.heal_time),
+        );
+        queue(&mut q.bolt, fresh[1], p.bow_cd.max(p.heal_time));
+        queue(&mut q.grenade, input.grenade, p.grenade_cd / rate);
+        queue(&mut q.trap, input.trap, p.trap_cd / rate);
         if p.ground {
             p.coyote = 0.09;
             p.jumps = 0;
@@ -1046,7 +1114,8 @@ impl Game {
         if input.axis != 0. && p.dodge <= 0. {
             p.face = input.axis.signum();
         }
-        if input.dodge && p.dodge_cd <= 0. && p.heal_time <= 0. {
+        if (input.dodge || p.queued.dodge > 0.) && p.dodge_cd <= 0. && p.heal_time <= 0. {
+            p.queued.dodge = 0.;
             p.dodge = 0.23;
             p.dodge_cd = 0.65;
             p.invuln = 0.23;
@@ -1054,7 +1123,8 @@ impl Game {
             self.sounds.push(Sfx::Dodge);
             effects.push((Effect::Dodge, p.pos, -p.face));
         }
-        if input.parry && p.parry_cd <= 0. {
+        if (input.parry || p.queued.parry > 0.) && p.parry_cd <= 0. {
+            p.queued.parry = 0.;
             p.parry = 0.20;
             p.parry_cd = 0.52;
             effects.push((Effect::ParryReady, p.pos + vec2(p.face * 13., -17.), p.face));
@@ -1144,7 +1214,12 @@ impl Game {
             self.footstep_distance = 0.;
         }
         let mut melee = None;
-        if input.attack && p.attack_cd <= 0. && p.dodge <= 0. && p.heal_time <= 0. {
+        if (input.attack || p.queued.strike > 0.)
+            && p.attack_cd <= 0.
+            && p.dodge <= 0.
+            && p.heal_time <= 0.
+        {
+            p.queued.strike = 0.;
             p.combo = if p.attack_cd == 0. && p.attack == 0. {
                 (p.combo + 1) % 3
             } else {
@@ -1165,7 +1240,8 @@ impl Game {
                 Sfx::Slash
             });
         }
-        if input.bow && p.bow_cd <= 0. && p.heal_time <= 0. {
+        if (input.bow || p.queued.bolt > 0.) && p.bow_cd <= 0. && p.heal_time <= 0. {
+            p.queued.bolt = 0.;
             p.bow_cd = 0.32;
             effects.push((Effect::Bolt, p.pos + vec2(p.face * 12., -16.), p.face));
             self.shots.push(Shot {
@@ -1179,7 +1255,8 @@ impl Game {
             });
             self.sounds.push(Sfx::Bolt);
         }
-        if input.grenade && p.grenade_cd <= 0. {
+        if (input.grenade || p.queued.grenade > 0.) && p.grenade_cd <= 0. {
+            p.queued.grenade = 0.;
             p.grenade_cd = 5.;
             self.sounds.push(Sfx::Throw);
             self.shots.push(Shot {
@@ -1192,8 +1269,9 @@ impl Game {
                 from: None,
             });
         }
-        if input.trap && p.trap_cd <= 0. {
+        if (input.trap || p.queued.trap > 0.) && p.trap_cd <= 0. {
             if let Some(y) = surface_below(&self.level.platforms, p.pos.x, p.pos.y) {
+                p.queued.trap = 0.;
                 p.trap_cd = 8.;
                 self.sounds.push(Sfx::Throw);
                 let pos = vec2(p.pos.x, y);
@@ -1282,6 +1360,7 @@ impl Game {
             self.player.drop_through = None;
             self.player.invuln = self.player.invuln.max(0.8);
             self.player.buffer = 0.;
+            self.player.queued = Queued::default();
             self.player.dodge = 0.;
             self.camera_y =
                 (self.player.pos.y - 230.).clamp(self.level.min_y, self.level.max_y - 360.);
@@ -1880,6 +1959,7 @@ impl Game {
         self.player.ground = true;
         self.player.jumps = 0;
         self.player.buffer = 0.;
+        self.player.queued = Queued::default();
         self.player.coyote = 0.;
         self.player.slam = false;
         self.player.drop_through = None;
@@ -2532,6 +2612,176 @@ mod tests {
             g.player.invuln = 0.;
         }
         strikes
+    }
+    /// The cooldown each early-pressable action starts when it happens, and
+    /// an input pressing it.
+    #[allow(clippy::type_complexity)]
+    fn early_actions() -> Vec<(&'static str, fn(&mut Player) -> &mut f32, Input)> {
+        let press = Input::default();
+        vec![
+            (
+                "dodge",
+                |p| &mut p.dodge_cd,
+                Input {
+                    dodge: true,
+                    ..press
+                },
+            ),
+            (
+                "parry",
+                |p| &mut p.parry_cd,
+                Input {
+                    parry: true,
+                    ..press
+                },
+            ),
+            (
+                "strike",
+                |p| &mut p.attack_cd,
+                Input {
+                    attack: true,
+                    ..press
+                },
+            ),
+            ("glassbolt", |p| &mut p.bow_cd, Input { bow: true, ..press }),
+            (
+                "fire vessel",
+                |p| &mut p.grenade_cd,
+                Input {
+                    grenade: true,
+                    ..press
+                },
+            ),
+            (
+                "arc snare",
+                |p| &mut p.trap_cd,
+                Input {
+                    trap: true,
+                    ..press
+                },
+            ),
+        ]
+    }
+    /// Presses once, `early` seconds before the action is ready, and returns
+    /// the simulated times (from the press) at which it happened.
+    fn early_press(cd: fn(&mut Player) -> &mut f32, press: Input, early: f32) -> Vec<f32> {
+        let mut g = game();
+        g.level.hazards.clear();
+        g.place_player(vec2(900., FLOOR));
+        *cd(&mut g.player) = early;
+        let mut times = vec![];
+        for step in 0..120 {
+            let before = *cd(&mut g.player);
+            g.tick(STEP, if step == 0 { press } else { Input::default() });
+            if *cd(&mut g.player) > before + STEP {
+                times.push(step as f32 * STEP);
+            }
+        }
+        times
+    }
+    #[test]
+    fn presses_made_a_moment_early_happen_once_ready() {
+        for (name, cd, press) in early_actions() {
+            let times = early_press(cd, press, 0.1);
+            assert_eq!(times.len(), 1, "{name} pressed 0.1 s early: {times:?}");
+            assert!(
+                (0.09..0.11).contains(&times[0]),
+                "{name} happens as it becomes ready, not later: {times:?}"
+            );
+            assert_eq!(early_press(cd, press, 0.).len(), 1, "{name} when ready");
+            assert!(
+                early_press(cd, press, 0.3).is_empty(),
+                "{name} pressed 0.3 s early is still dropped"
+            );
+        }
+    }
+    #[test]
+    fn held_strikes_repeat_as_before_and_releasing_adds_none() {
+        let mut g = game();
+        g.level.hazards.clear();
+        g.place_player(vec2(900., FLOOR));
+        let hold = Input {
+            attack: true,
+            ..Default::default()
+        };
+        let mut swings = vec![];
+        for step in 0..240 {
+            let before = g.player.attack_cd;
+            // Held through five swings and released 25 steps after the last,
+            // 0.07 s before the next would come, then left alone.
+            let held = step < 157;
+            g.tick(STEP, if held { hold } else { Input::default() });
+            if g.player.attack_cd > before {
+                swings.push(step);
+            }
+        }
+        // The sabre's 0.27 s delay is 33 steps (32.4, rounded up by the
+        // timer reaching zero on the next step).
+        let gaps: Vec<_> = swings.windows(2).map(|w| w[1] - w[0]).collect();
+        assert!(gaps.iter().all(|&gap| gap == 33), "even swings: {gaps:?}");
+        assert_eq!(swings.len(), 5, "no swing after release: {swings:?}");
+    }
+    #[test]
+    fn a_strike_tapped_late_in_a_dodge_lands_as_it_ends() {
+        let mut g = game();
+        g.level.hazards.clear();
+        g.place_player(vec2(900., FLOOR));
+        g.tick(
+            STEP,
+            Input {
+                dodge: true,
+                ..Default::default()
+            },
+        );
+        assert!(g.player.dodge > 0.);
+        while g.player.dodge > 0.1 {
+            g.tick(STEP, Input::default());
+        }
+        // A tap: held for two steps, then released.
+        for _ in 0..2 {
+            g.tick(
+                STEP,
+                Input {
+                    attack: true,
+                    ..Default::default()
+                },
+            );
+        }
+        assert_eq!(g.player.attack_cd, 0., "no swing while dodging");
+        let mut steps = 0;
+        while g.player.attack_cd == 0. && steps < 60 {
+            g.tick(STEP, Input::default());
+            steps += 1;
+        }
+        assert!(g.player.dodge <= 0. && g.player.attack_cd > 0.);
+        assert!(
+            steps <= 12,
+            "swung {steps} steps after the tap, as the dodge ended"
+        );
+    }
+    #[test]
+    fn menus_discard_early_presses() {
+        let mut g = game();
+        g.level.hazards.clear();
+        g.place_player(vec2(900., FLOOR));
+        g.player.dodge_cd = 0.1;
+        g.tick(
+            STEP,
+            Input {
+                dodge: true,
+                ..Default::default()
+            },
+        );
+        g.screen = Screen::Paused;
+        g.tick(STEP, Input::default());
+        g.screen = Screen::Playing;
+        for _ in 0..60 {
+            g.tick(STEP, Input::default());
+        }
+        assert_eq!(
+            g.player.dodge_cd, 0.,
+            "the dodge pressed before pausing is gone"
+        );
     }
     #[test]
     fn held_attack_no_longer_stun_locks_guardians() {
