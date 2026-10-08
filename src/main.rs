@@ -587,7 +587,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 35] = [
+const UI_GALLERY_NAMES: [&str; 36] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -623,6 +623,7 @@ const UI_GALLERY_NAMES: [&str; 35] = [
     "ui-32-low-vitality-steady",
     "ui-33-hover-controls-row",
     "ui-34-hover-camp-route",
+    "ui-35-refused-presses",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -930,6 +931,17 @@ fn ui_fixture(index: usize) -> Game {
                 .into_iter()
                 .find(|(_, click)| *click == target)
                 .map(|(rect, _)| rect.center());
+        }
+        // The dodge recovering, and presses of the fire vessel (still
+        // recovering) and the flask (none left) that couldn't happen.
+        35 => {
+            g.player.dodge_cd = 0.4;
+            g.player.grenade_cd = 3.1;
+            g.player.flasks = 0;
+            g.player.flask_note = "EMPTY";
+            for slot in [game::Slot::FireVessel, game::Slot::Flask] {
+                g.player.refused[slot as usize] = game::REFUSAL_SHOW * 0.8;
+            }
         }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }

@@ -244,7 +244,25 @@ pub struct Player {
     /// Whether strike and glassbolt were held last step, so a fresh press
     /// can be told apart from a hold.
     pub held: [bool; 2],
+    /// Seconds left of each HUD slot's mark for a press that couldn't
+    /// happen, indexed by `Slot`.
+    pub refused: [f32; 7],
+    /// Why the flask was refused: "EMPTY" or "FULL".
+    pub flask_note: &'static str,
 }
+/// The HUD slots a refused press marks.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Slot {
+    Strike,
+    Glassbolt,
+    FireVessel,
+    ArcSnare,
+    Flask,
+    Parry,
+    Dodge,
+}
+/// How long a refused press marks its HUD slot.
+pub const REFUSAL_SHOW: f32 = 0.45;
 /// How long before an action is ready a press of it is kept rather than
 /// dropped. Jumping keeps its own, shorter buffer (`Player::buffer`).
 pub const PRESS_BUFFER: f32 = 0.15;
@@ -323,7 +341,14 @@ impl Player {
             mutation: 0,
             queued: Queued::default(),
             held: [false; 2],
+            refused: [0.; 7],
+            flask_note: "",
         }
+    }
+    /// How strongly `slot` is marked for a refused press, from 1 just
+    /// after it to 0.
+    pub fn refusal(&self, slot: Slot) -> f32 {
+        (self.refused[slot as usize] / REFUSAL_SHOW).clamp(0., 1.)
     }
     /// The run mutation bought from the Keeper, if any.
     pub fn mutation_name(&self) -> Option<&'static str> {
@@ -1076,21 +1101,51 @@ impl Game {
         // Presses made a moment before their action is ready are kept until
         // it is. Strike and glassbolt repeat while held, so only a fresh
         // press of either is kept, and releasing never adds a swing.
+        // Presses too early to keep mark their slot on the HUD instead.
         p.queued.tick(dt);
+        for t in &mut p.refused {
+            *t = (*t - dt).max(0.);
+        }
         let rate = if p.mutation == 2 { 1.35 } else { 1. };
         let fresh = [input.attack && !p.held[0], input.bow && !p.held[1]];
         p.held = [input.attack, input.bow];
         let q = &mut p.queued;
-        queue(&mut q.dodge, input.dodge, p.dodge_cd.max(p.heal_time));
-        queue(&mut q.parry, input.parry, p.parry_cd);
-        queue(
-            &mut q.strike,
-            fresh[0],
-            p.attack_cd.max(p.dodge).max(p.heal_time),
-        );
-        queue(&mut q.bolt, fresh[1], p.bow_cd.max(p.heal_time));
-        queue(&mut q.grenade, input.grenade, p.grenade_cd / rate);
-        queue(&mut q.trap, input.trap, p.trap_cd / rate);
+        let kept = [
+            (
+                Slot::Dodge,
+                queue(&mut q.dodge, input.dodge, p.dodge_cd.max(p.heal_time)),
+            ),
+            (Slot::Parry, queue(&mut q.parry, input.parry, p.parry_cd)),
+            (
+                Slot::Strike,
+                queue(
+                    &mut q.strike,
+                    fresh[0],
+                    p.attack_cd.max(p.dodge).max(p.heal_time),
+                ),
+            ),
+            (
+                Slot::Glassbolt,
+                queue(&mut q.bolt, fresh[1], p.bow_cd.max(p.heal_time)),
+            ),
+            (
+                Slot::FireVessel,
+                queue(&mut q.grenade, input.grenade, p.grenade_cd / rate),
+            ),
+            (
+                Slot::ArcSnare,
+                queue(&mut q.trap, input.trap, p.trap_cd / rate),
+            ),
+        ];
+        for (slot, kept) in kept {
+            if !kept {
+                p.refused[slot as usize] = REFUSAL_SHOW;
+            }
+        }
+        if input.heal && p.heal_time <= 0. && (p.flasks == 0 || p.hp >= p.max_hp) {
+            p.refused[Slot::Flask as usize] = REFUSAL_SHOW;
+            p.flask_note = if p.flasks == 0 { "EMPTY" } else { "FULL" };
+        }
         if p.ground {
             p.coyote = 0.09;
             p.jumps = 0;
@@ -1960,6 +2015,7 @@ impl Game {
         self.player.jumps = 0;
         self.player.buffer = 0.;
         self.player.queued = Queued::default();
+        self.player.refused = [0.; 7];
         self.player.coyote = 0.;
         self.player.slam = false;
         self.player.drop_through = None;
@@ -2613,54 +2669,30 @@ mod tests {
         }
         strikes
     }
-    /// The cooldown each early-pressable action starts when it happens, and
-    /// an input pressing it.
+    /// The cooldown each early-pressable action starts when it happens, an
+    /// input pressing it, and its HUD slot.
     #[allow(clippy::type_complexity)]
-    fn early_actions() -> Vec<(&'static str, fn(&mut Player) -> &mut f32, Input)> {
-        let press = Input::default();
-        vec![
-            (
-                "dodge",
-                |p| &mut p.dodge_cd,
-                Input {
-                    dodge: true,
-                    ..press
-                },
-            ),
-            (
-                "parry",
-                |p| &mut p.parry_cd,
-                Input {
-                    parry: true,
-                    ..press
-                },
-            ),
-            (
-                "strike",
-                |p| &mut p.attack_cd,
-                Input {
-                    attack: true,
-                    ..press
-                },
-            ),
-            ("glassbolt", |p| &mut p.bow_cd, Input { bow: true, ..press }),
-            (
-                "fire vessel",
-                |p| &mut p.grenade_cd,
-                Input {
-                    grenade: true,
-                    ..press
-                },
-            ),
-            (
-                "arc snare",
-                |p| &mut p.trap_cd,
-                Input {
-                    trap: true,
-                    ..press
-                },
-            ),
-        ]
+    fn early_actions() -> Vec<(&'static str, fn(&mut Player) -> &mut f32, Input, Slot)> {
+        let mut presses = [Input::default(); 6];
+        presses[0].dodge = true;
+        presses[1].parry = true;
+        presses[2].attack = true;
+        presses[3].bow = true;
+        presses[4].grenade = true;
+        presses[5].trap = true;
+        let actions: [(&str, fn(&mut Player) -> &mut f32, Slot); 6] = [
+            ("dodge", |p| &mut p.dodge_cd, Slot::Dodge),
+            ("parry", |p| &mut p.parry_cd, Slot::Parry),
+            ("strike", |p| &mut p.attack_cd, Slot::Strike),
+            ("glassbolt", |p| &mut p.bow_cd, Slot::Glassbolt),
+            ("fire vessel", |p| &mut p.grenade_cd, Slot::FireVessel),
+            ("arc snare", |p| &mut p.trap_cd, Slot::ArcSnare),
+        ];
+        actions
+            .into_iter()
+            .zip(presses)
+            .map(|((name, cd, slot), press)| (name, cd, press, slot))
+            .collect()
     }
     /// Presses once, `early` seconds before the action is ready, and returns
     /// the simulated times (from the press) at which it happened.
@@ -2681,7 +2713,7 @@ mod tests {
     }
     #[test]
     fn presses_made_a_moment_early_happen_once_ready() {
-        for (name, cd, press) in early_actions() {
+        for (name, cd, press, _) in early_actions() {
             let times = early_press(cd, press, 0.1);
             assert_eq!(times.len(), 1, "{name} pressed 0.1 s early: {times:?}");
             assert!(
@@ -2694,6 +2726,84 @@ mod tests {
                 "{name} pressed 0.3 s early is still dropped"
             );
         }
+    }
+    /// A game with the hero on safe ground and nothing about.
+    fn quiet() -> Game {
+        let mut g = game();
+        g.level.hazards.clear();
+        g.place_player(vec2(900., FLOOR));
+        g
+    }
+    fn marked(g: &Game) -> Vec<Slot> {
+        [
+            Slot::Strike,
+            Slot::Glassbolt,
+            Slot::FireVessel,
+            Slot::ArcSnare,
+            Slot::Flask,
+            Slot::Parry,
+            Slot::Dodge,
+        ]
+        .into_iter()
+        .filter(|s| g.player.refusal(*s) > 0.)
+        .collect()
+    }
+    #[test]
+    fn presses_too_early_to_keep_mark_only_their_own_slot() {
+        for (name, cd, press, slot) in early_actions() {
+            let mut g = quiet();
+            *cd(&mut g.player) = 0.3;
+            g.tick(STEP, press);
+            assert_eq!(marked(&g), vec![slot], "{name} pressed 0.3 s early");
+            assert!(g.player.refusal(slot) > 0.95, "marked at full strength");
+            for _ in 0..(REFUSAL_SHOW / STEP) as usize + 2 {
+                g.tick(STEP, Input::default());
+            }
+            assert!(marked(&g).is_empty(), "{name}'s mark fades");
+            // A press that's kept and then happens marks nothing.
+            let mut g = quiet();
+            *cd(&mut g.player) = 0.1;
+            g.tick(STEP, press);
+            assert!(marked(&g).is_empty(), "{name} pressed 0.1 s early is kept");
+        }
+        // Holding strike through its recovery isn't a refused press.
+        let mut g = quiet();
+        let hold = Input {
+            attack: true,
+            ..Default::default()
+        };
+        for _ in 0..90 {
+            g.tick(STEP, hold);
+        }
+        assert!(marked(&g).is_empty(), "a held strike marks nothing");
+    }
+    #[test]
+    fn the_flask_says_why_it_was_refused() {
+        let heal = Input {
+            heal: true,
+            ..Default::default()
+        };
+        let mut g = quiet();
+        g.tick(STEP, heal);
+        assert_eq!(
+            (marked(&g), g.player.flask_note),
+            (vec![Slot::Flask], "FULL")
+        );
+        let mut g = quiet();
+        g.player.hp = 40.;
+        g.player.flasks = 0;
+        g.tick(STEP, heal);
+        assert_eq!(
+            (marked(&g), g.player.flask_note),
+            (vec![Slot::Flask], "EMPTY")
+        );
+        let mut g = quiet();
+        g.player.hp = 40.;
+        g.tick(STEP, heal);
+        assert!(
+            marked(&g).is_empty() && g.player.heal_time > 0.,
+            "drinking is no refusal"
+        );
     }
     #[test]
     fn held_strikes_repeat_as_before_and_releasing_adds_none() {

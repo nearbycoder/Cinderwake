@@ -15,6 +15,8 @@ const MUTED: u32 = 0x98b4b4;
 const TEAL: u32 = 0x85dfcc;
 /// Warnings: confirmations, refusals, and a lost controller.
 const WARN: u32 = 0xef9c81;
+/// A HUD slot whose press couldn't happen.
+const REFUSED: u32 = 0xec7465;
 /// Only the desktop game can close itself; browsers close the tab.
 const QUIT: bool = cfg!(not(target_arch = "wasm32"));
 
@@ -579,6 +581,18 @@ impl Ui {
                 let h = 33. * (*cd / max).clamp(0., 1.);
                 draw_rectangle(x + 18., 689. - h, 34., h, INK.with_alpha(0.5));
             }
+            self.refusal(
+                Rect::new(x + 11., 649., 48., 48.),
+                p.refusal(
+                    [
+                        Slot::Strike,
+                        Slot::Glassbolt,
+                        Slot::FireVessel,
+                        Slot::ArcSnare,
+                    ][i],
+                ),
+                g.settings.reduce_flashes,
+            );
             self.key(key, x + 22., 682.);
             self.text(name, x + 67., 665., 14., c(PALE));
             let status = if *cd > 0. {
@@ -627,17 +641,54 @@ impl Ui {
             Rect::new(838., 649., 40., 44.),
             if p.flasks == 0 { 0.4 } else { 1. },
         );
+        let flask_refused = p.refusal(Slot::Flask);
+        self.refusal(
+            Rect::new(834., 646., 48., 52.),
+            flask_refused,
+            g.settings.reduce_flashes,
+        );
         self.key(prompts.action(Action::Heal), 844., 683.);
         self.text("HEALING FLASK", 886., 665., 14., c(PALE));
-        self.text(
-            &format!("{} / {}", p.flasks, 2 + g.save.flask),
-            888.,
-            691.,
-            21.,
-            c(if p.flasks == 0 { MUTED } else { TEAL }),
-        );
+        if flask_refused > 0. {
+            self.text(p.flask_note, 888., 691., 18., c(REFUSED));
+        } else {
+            self.text(
+                &format!("{} / {}", p.flasks, 2 + g.save.flask),
+                888.,
+                691.,
+                21.,
+                c(if p.flasks == 0 { MUTED } else { TEAL }),
+            );
+        }
         self.skin.panel(Rect::new(1024., 638., 240., 72.));
-        self.skin.icon(7, Rect::new(1038., 650., 29., 29.), 1.);
+        // Dodge and parry recover like the slots, shown on their badges.
+        for (icon, rect, cd, max, slot) in [
+            (
+                7,
+                Rect::new(1038., 650., 29., 29.),
+                p.parry_cd,
+                0.52,
+                Slot::Parry,
+            ),
+            (
+                15,
+                Rect::new(1148., 650., 27., 28.),
+                p.dodge_cd,
+                0.65,
+                Slot::Dodge,
+            ),
+        ] {
+            self.skin.icon(icon, rect, if cd > 0. { 0.5 } else { 1. });
+            if cd > 0. {
+                let h = rect.h * (cd / max).clamp(0., 1.);
+                draw_rectangle(rect.x, rect.bottom() - h, rect.w, h, INK.with_alpha(0.5));
+            }
+            self.refusal(
+                Rect::new(rect.x - 4., rect.y - 4., rect.w + 8., rect.h + 8.),
+                p.refusal(slot),
+                g.settings.reduce_flashes,
+            );
+        }
         self.text(
             &format!("{}  PARRY", prompts.action(Action::Parry)),
             1077.,
@@ -645,7 +696,6 @@ impl Ui {
             15.,
             c(PALE),
         );
-        self.skin.icon(15, Rect::new(1148., 650., 27., 28.), 1.);
         self.text(prompts.action(Action::Dodge), 1184., 668., 14., c(PALE));
         self.text("DODGE", 1184., 684., 11., c(MUTED));
         self.text(
@@ -654,6 +704,27 @@ impl Ui {
             695.,
             13.,
             c(MUTED),
+        );
+    }
+    /// Marks a HUD slot whose press couldn't happen: a flash that fades
+    /// with `strength`, or a steady outline with flashes reduced.
+    fn refusal(&self, rect: Rect, strength: f32, reduce_flashes: bool) {
+        if strength <= 0. {
+            return;
+        }
+        let (fill, line) = if reduce_flashes {
+            (0., 0.7)
+        } else {
+            (0.28 * strength, 0.4 + 0.6 * strength)
+        };
+        draw_rectangle(rect.x, rect.y, rect.w, rect.h, c(REFUSED).with_alpha(fill));
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            2.,
+            c(REFUSED).with_alpha(line),
         );
     }
     fn prompt(&self, text: &str, y: f32) {
