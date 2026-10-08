@@ -261,6 +261,10 @@ pub enum Slot {
     Parry,
     Dodge,
 }
+/// Copper the forge asks to temper a weapon.
+pub const FORGE_COST: u32 = 60;
+/// Guardians to fell before a sealed cache opens without the Crown Rune.
+pub const CACHE_KILLS: u32 = 8;
 /// How long a refused press marks its HUD slot.
 pub const REFUSAL_SHOW: f32 = 0.45;
 /// How long before an action is ready a press of it is kept rather than
@@ -1752,6 +1756,48 @@ impl Game {
             })
             .map(|(i, _)| i)
     }
+    /// The prompt for interacting with object `i`, and whether interacting
+    /// will work now. Objects that need something say what, and how much of
+    /// it the hero has; the bellgate says what it banks.
+    pub fn object_prompt(&self, i: usize) -> (String, bool) {
+        let p = &self.player;
+        let banks = |action: &str| match p.embers {
+            0 => action.to_string(),
+            n => format!("{action} / BANK {n} EMBERS"),
+        };
+        match self.level.objects[i].kind {
+            ObjectKind::Exit if self.regent_holds_gate() => {
+                ("HELD SHUT BY THE BRASS REGENT".into(), false)
+            }
+            ObjectKind::Exit => (banks("RING THE BELLGATE"), true),
+            ObjectKind::Scroll => ("CLAIM A MEMORY".into(), true),
+            ObjectKind::Chest => ("OPEN RELIQUARY".into(), true),
+            ObjectKind::Fountain => ("DRINK FROM THE WELL".into(), true),
+            ObjectKind::Forge if p.gold < FORGE_COST => (
+                format!("TEMPER WEAPON / {} OF {FORGE_COST} COPPER", p.gold),
+                false,
+            ),
+            ObjectKind::Forge => (format!("TEMPER WEAPON / {FORGE_COST} COPPER"), true),
+            ObjectKind::Lore => ("READ THE INSCRIPTION".into(), true),
+            ObjectKind::Secret if p.kills >= CACHE_KILLS => ("BREAK THE SEAL".into(), true),
+            ObjectKind::Secret if self.save.rune => {
+                ("BREAK THE SEAL WITH THE CROWN RUNE".into(), true)
+            }
+            ObjectKind::Secret => (
+                format!("SEALED / {} OF {CACHE_KILLS} GUARDIANS FELLED", p.kills),
+                false,
+            ),
+        }
+    }
+    /// Whether this is the Crown's gate with the Regent still standing.
+    fn regent_holds_gate(&self) -> bool {
+        self.level.biome == Biome::Crown
+            && self
+                .level
+                .enemies
+                .iter()
+                .any(|e| e.kind == EnemyKind::Regent && e.hp > 0.)
+    }
     fn interact(&mut self) {
         let Some(i) = self.nearby() else { return };
         let kind = self.level.objects[i].kind;
@@ -1781,12 +1827,12 @@ impl Game {
                 self.notify("The well remembers you. Health and flasks restored.");
             }
             ObjectKind::Forge => {
-                if self.player.gold < 60 {
+                if self.player.gold < FORGE_COST {
                     self.notify("The smith asks for 60 copper to temper your weapon.");
                     self.sounds.push(Sfx::Deny);
                     return;
                 }
-                self.player.gold -= 60;
+                self.player.gold -= FORGE_COST;
                 self.player.tier += 1;
                 self.notify("Weapon tempered. Damage increased; attacks ignite enemies.");
             }
@@ -1796,7 +1842,7 @@ impl Game {
                 );
             }
             ObjectKind::Secret => {
-                if !self.save.rune && self.player.kills < 8 {
+                if !self.save.rune && self.player.kills < CACHE_KILLS {
                     self.notify(
                         "A sealed cache. Defeat 8 guardians, or return with the Crown Rune.",
                     );
@@ -1809,12 +1855,7 @@ impl Game {
             }
             ObjectKind::Exit => {
                 if self.level.biome == Biome::Crown {
-                    if self
-                        .level
-                        .enemies
-                        .iter()
-                        .any(|e| e.kind == EnemyKind::Regent && e.hp > 0.)
-                    {
+                    if self.regent_holds_gate() {
                         self.notify("The Brass Regent holds the gate shut.");
                         self.sounds.push(Sfx::Deny);
                         return;
@@ -3660,6 +3701,84 @@ mod tests {
         assert_eq!(g.screen, Screen::Dead);
         assert_eq!(g.player.embers, 0);
         assert_eq!(g.save.embers, 30);
+    }
+    /// A practice game with the hero standing at a lone object of `kind`.
+    fn beside(kind: ObjectKind) -> Game {
+        let mut g = game();
+        g.level.objects = vec![Object {
+            pos: vec2(900., FLOOR),
+            kind,
+            used: false,
+        }];
+        g.place_player(vec2(900., FLOOR));
+        assert_eq!(g.nearby(), Some(0));
+        g
+    }
+    #[test]
+    fn prompts_say_what_an_object_needs_and_gives() {
+        let prompt = |g: &Game| g.object_prompt(0);
+        let mut g = beside(ObjectKind::Forge);
+        g.player.gold = 35;
+        assert_eq!(
+            prompt(&g),
+            ("TEMPER WEAPON / 35 OF 60 COPPER".into(), false)
+        );
+        g.player.gold = 60;
+        assert_eq!(prompt(&g), ("TEMPER WEAPON / 60 COPPER".into(), true));
+        let mut g = beside(ObjectKind::Secret);
+        g.player.kills = 3;
+        assert_eq!(
+            prompt(&g),
+            ("SEALED / 3 OF 8 GUARDIANS FELLED".into(), false)
+        );
+        g.save.rune = true;
+        assert_eq!(
+            prompt(&g),
+            ("BREAK THE SEAL WITH THE CROWN RUNE".into(), true)
+        );
+        g.player.kills = 8;
+        assert_eq!(prompt(&g), ("BREAK THE SEAL".into(), true));
+        let mut g = beside(ObjectKind::Exit);
+        assert_eq!(prompt(&g), ("RING THE BELLGATE".into(), true));
+        g.player.embers = 18;
+        assert_eq!(
+            prompt(&g),
+            ("RING THE BELLGATE / BANK 18 EMBERS".into(), true)
+        );
+        g.level.biome = Biome::Crown;
+        g.level
+            .enemies
+            .push(Enemy::new(1200., FLOOR, EnemyKind::Regent, Threat::BASE));
+        assert_eq!(prompt(&g), ("HELD SHUT BY THE BRASS REGENT".into(), false));
+        g.level.enemies[0].hp = 0.;
+        assert!(prompt(&g).1, "the gate opens once the Regent falls");
+        for (kind, text) in [
+            (ObjectKind::Scroll, "CLAIM A MEMORY"),
+            (ObjectKind::Chest, "OPEN RELIQUARY"),
+            (ObjectKind::Fountain, "DRINK FROM THE WELL"),
+            (ObjectKind::Lore, "READ THE INSCRIPTION"),
+        ] {
+            assert_eq!(prompt(&beside(kind)), (text.into(), true), "unchanged");
+        }
+    }
+    #[test]
+    fn a_dimmed_prompt_means_interacting_is_refused() {
+        // Whatever the prompt says, pressing interact does what it did:
+        // a refusal leaves the object, and a ready prompt uses it.
+        for (kind, gold, kills) in [
+            (ObjectKind::Forge, 35, 0),
+            (ObjectKind::Forge, 60, 0),
+            (ObjectKind::Secret, 0, 3),
+            (ObjectKind::Secret, 0, 8),
+        ] {
+            let mut g = beside(kind);
+            g.player.gold = gold;
+            g.player.kills = kills;
+            let ready = g.object_prompt(0).1;
+            g.interact();
+            assert_eq!(g.level.objects[0].used, ready, "{kind:?} {gold} {kills}");
+            assert_eq!(g.sounds.contains(&Sfx::Deny), !ready);
+        }
     }
     #[test]
     fn exits_bank_and_boss_locks_gate() {

@@ -727,11 +727,11 @@ impl Ui {
             c(REFUSED).with_alpha(line),
         );
     }
-    fn prompt(&self, text: &str, y: f32) {
+    fn prompt(&self, text: &str, y: f32, color: Color) {
         let width = (measure_text(text, None, 16, 1.).width + 64.).max(250.);
         self.skin
             .plaque(Rect::new(640. - width / 2., y - 25., width, 38.));
-        self.center(text, y, 16., c(GOLD));
+        self.center(text, y, 16., color);
     }
     fn modal(&self, rect: Rect, heading: &str, y: f32) {
         self.skin.panel(rect);
@@ -868,17 +868,14 @@ impl Ui {
                 self.text(text, rect.x + 110., rect.y + 27., 16., c(PALE));
             }
             if let Some(i) = g.nearby() {
-                let action = match g.level.objects[i].kind {
-                    ObjectKind::Exit => "RING THE BELLGATE",
-                    ObjectKind::Scroll => "CLAIM A MEMORY",
-                    ObjectKind::Chest => "OPEN RELIQUARY",
-                    ObjectKind::Fountain => "DRINK FROM THE WELL",
-                    ObjectKind::Forge => "TEMPER WEAPON / 60 COPPER",
-                    ObjectKind::Lore => "READ THE INSCRIPTION",
-                    ObjectKind::Secret => "BREAK THE SEAL",
-                };
+                // A prompt for something that can't be done yet is dimmed.
+                let (action, ready) = g.object_prompt(i);
                 let key = g.prompts().action(Action::Interact);
-                self.prompt(&format!("{key}   {action}"), 587.);
+                self.prompt(
+                    &format!("{key}   {action}"),
+                    587.,
+                    c(if ready { GOLD } else { MUTED }),
+                );
             }
             if g.notice_time > 0. {
                 self.center(&g.notice, 620., 15., c(PALE));
