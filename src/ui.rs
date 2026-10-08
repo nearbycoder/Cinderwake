@@ -608,9 +608,12 @@ impl Ui {
             c(PALE),
         );
         let ratio = (p.hp / p.max_hp).clamp(0., 1.);
-        self.skin.gauge(
+        // What a recent hit took stays lit behind the fill for a moment.
+        let trail = g.vitality_trail.map_or(ratio, |t| t.shown / p.max_hp);
+        self.skin.gauge_trailing(
             Rect::new(89., 50., 236., 33.),
             ratio,
+            trail,
             c(if ratio < 0.25 { 0xec7465 } else { 0x75c4ac }),
         );
         self.skin.panel(Rect::new(348., 16., 174., 80.));

@@ -602,7 +602,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 43] = [
+const UI_GALLERY_NAMES: [&str; 44] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -646,6 +646,7 @@ const UI_GALLERY_NAMES: [&str; 43] = [
     "ui-40-flask-interrupted",
     "ui-41-options-fidelity",
     "ui-42-pause-easing-in",
+    "ui-43-vitality-trail",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -1021,6 +1022,11 @@ fn ui_fixture(index: usize) -> Game {
             g.pointer = Some(vec2(847., 367.));
         }
         42 => g.screen = Screen::Paused,
+        43 => {
+            // A hit has just taken vitality from 104 to 64.
+            g.player.hp = 64.;
+            g.vitality_trail = Some(game::VitalityTrail::after_hit(104., 64.));
+        }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
     g

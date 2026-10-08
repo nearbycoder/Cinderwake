@@ -37,6 +37,54 @@ pub enum Screen {
     Dead,
     Victory,
 }
+/// The part of the vitality bar a hit just took: it stays lit for a moment,
+/// then drains to the new value. Healing fills straight away.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VitalityTrail {
+    /// The vitality the trail reaches to.
+    pub shown: f32,
+    /// Vitality at the last step, to notice a new hit.
+    last: f32,
+    /// Seconds before the trail starts to drain.
+    hold: f32,
+}
+impl VitalityTrail {
+    /// How long the lost vitality stays lit before draining.
+    pub const HOLD: f32 = 0.5;
+    /// How fast it drains, in maximum vitality per second.
+    pub const DRAIN: f32 = 1.5;
+    pub fn at(hp: f32) -> Self {
+        Self {
+            shown: hp.max(0.),
+            last: hp.max(0.),
+            hold: 0.,
+        }
+    }
+    /// A trail already holding a hit from `from` down to `hp`, for fixtures.
+    pub fn after_hit(from: f32, hp: f32) -> Self {
+        Self {
+            shown: from,
+            last: hp,
+            hold: Self::HOLD,
+        }
+    }
+    pub fn update(&mut self, hp: f32, max_hp: f32, dt: f32) {
+        let hp = hp.max(0.);
+        if hp >= self.shown {
+            *self = Self::at(hp);
+            return;
+        }
+        if hp < self.last {
+            // Each new hit holds the whole trail again.
+            self.hold = Self::HOLD;
+        } else if self.hold > 0. {
+            self.hold = (self.hold - dt).max(0.);
+        } else {
+            self.shown = (self.shown - max_hp * Self::DRAIN * dt).max(hp);
+        }
+        self.last = hp;
+    }
+}
 /// One-time tips, each shown the first time its mechanic becomes relevant.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Hint {
@@ -504,6 +552,8 @@ pub struct Game {
     /// Graphics fidelity chosen by a launch flag for this session only; it's
     /// never saved, and choosing one in the game replaces it.
     pub session_fidelity: Option<crate::fidelity::Fidelity>,
+    /// What the vitality bar shows of a recent hit; unset until play runs.
+    pub vitality_trail: Option<VitalityTrail>,
     /// Screen to return to when the options page closes.
     pub options_from: Screen,
     pub options_row: usize,
@@ -660,6 +710,7 @@ impl Game {
             map: false,
             settings: Settings::default(),
             session_fidelity: None,
+            vitality_trail: None,
             options_from: Screen::Title,
             options_row: 0,
             controls_row: 0,
@@ -1118,6 +1169,10 @@ impl Game {
             self.pad_lost = false;
         }
         self.time += dt;
+        let (hp, max_hp) = (self.player.hp, self.player.max_hp);
+        self.vitality_trail
+            .get_or_insert_with(|| VitalityTrail::at(hp))
+            .update(hp, max_hp, dt);
         self.notice_time = (self.notice_time - dt).max(0.);
         self.shake = (self.shake - dt * 24.).max(0.);
         particles::update(&mut self.particles, dt);
@@ -2179,6 +2234,47 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_vitality_bar_holds_a_hit_then_drains_and_heals_at_once() {
+        let step = 1. / 120.;
+        let run = |trail: &mut VitalityTrail, hp: f32, seconds: f32| {
+            for _ in 0..(seconds / step).round() as u32 {
+                trail.update(hp, 100., step);
+            }
+        };
+        let mut trail = VitalityTrail::at(100.);
+        run(&mut trail, 60., 0.4);
+        assert_eq!(trail.shown, 100., "held while the hit is fresh");
+        run(&mut trail, 60., 0.2);
+        assert!(trail.shown < 100. && trail.shown > 60., "then drains");
+        run(&mut trail, 60., 1.);
+        assert_eq!(trail.shown, 60., "and stops at the new value");
+        // A second hit while draining holds the whole trail again.
+        let mut trail = VitalityTrail::at(100.);
+        run(&mut trail, 70., 0.55);
+        let draining = trail.shown;
+        run(&mut trail, 50., 0.3);
+        assert_eq!(trail.shown, draining, "held again by the second hit");
+        // A heal below the trail leaves the earlier hit draining; one past
+        // it clears the trail at once. (The fill itself always shows the
+        // vitality as it is.)
+        run(&mut trail, 60., step);
+        assert!(trail.shown > 60.);
+        run(&mut trail, 100., step);
+        assert_eq!(trail, VitalityTrail::at(100.));
+        // In play, a hit shows on the next step.
+        let mut g = Game::new(4017, Save::default());
+        g.start();
+        g.intro = 0.;
+        g.tick(step, Input::default());
+        let full = g.player.hp;
+        g.hurt(10., 1., Cause::Hazard);
+        g.tick(step, Input::default());
+        let shown = g.vitality_trail.unwrap();
+        assert_eq!(shown.shown, full);
+        assert!(g.player.hp < full);
+    }
+
     #[test]
     fn a_launch_flags_fidelity_lasts_the_whole_session() {
         let mut g = Game::new(4017, Save::default());

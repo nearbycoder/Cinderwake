@@ -115,6 +115,11 @@ impl Skin {
         self.frame(2, rect, 12.);
     }
     pub fn gauge(&self, rect: Rect, fraction: f32, color: Color) {
+        self.gauge_trailing(rect, fraction, fraction, color);
+    }
+    /// A gauge whose fill was at `trail` a moment ago: the part lost since
+    /// is drawn pale behind the fill.
+    pub fn gauge_trailing(&self, rect: Rect, fraction: f32, trail: f32, color: Color) {
         self.frame(1, rect, 10.);
         let inner = Rect::new(
             rect.x + 14.,
@@ -130,6 +135,16 @@ impl Skin {
             Color::from_hex(0x111c28),
         );
         let width = (inner.w * fraction.clamp(0., 1.)).round();
+        let lost = (inner.w * trail.clamp(0., 1.)).round();
+        if lost > width {
+            draw_rectangle(
+                inner.x + width,
+                inner.y,
+                lost - width,
+                inner.h,
+                Color::from_rgba(246, 222, 190, 210),
+            );
+        }
         if width > 0. {
             draw_rectangle(inner.x, inner.y, width, inner.h, color);
             draw_rectangle(
