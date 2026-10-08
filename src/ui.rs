@@ -302,14 +302,15 @@ impl Ui {
         }
     }
     fn text(&self, s: &str, x: f32, y: f32, size: f32, col: Color) {
-        // A small dark shadow keeps live glyphs crisp over textured frames.
+        // A small dark shadow keeps live glyphs crisp over textured frames;
+        // it fades with the text.
         draw_text_ex(
             s,
             x + 1.,
             y + 1.,
             TextParams {
                 font_size: size as u16,
-                color: INK,
+                color: INK.with_alpha(INK.a * col.a),
                 ..Default::default()
             },
         );
@@ -775,6 +776,30 @@ impl Ui {
             c(REFUSED).with_alpha(line),
         );
     }
+    /// The current notice, fading in and out; in play, on a dark band sized
+    /// to it so it reads over any scenery.
+    fn notice(&self, g: &Game, y: f32, color: u32, band: bool) {
+        let alpha = g.notice_alpha();
+        if g.notice_time <= 0. || alpha <= 0. {
+            return;
+        }
+        if !band {
+            self.center(&g.notice, y, 15., c(color).with_alpha(alpha));
+            return;
+        }
+        let width = measure_text(&g.notice, None, 15, 1.).width + 40.;
+        let band = Rect::new(640. - width / 2., y - 15., width, 24.);
+        draw_rectangle(band.x, band.y, band.w, band.h, INK.with_alpha(0.78 * alpha));
+        draw_rectangle_lines(
+            band.x,
+            band.y,
+            band.w,
+            band.h,
+            1.,
+            c(GOLD).with_alpha(0.3 * alpha),
+        );
+        self.center(&g.notice, y, 15., c(color).with_alpha(alpha));
+    }
     fn prompt(&self, text: &str, y: f32, color: Color) {
         let width = (measure_text(text, None, 16, 1.).width + 64.).max(250.);
         self.skin
@@ -925,9 +950,7 @@ impl Ui {
                     c(if ready { GOLD } else { MUTED }),
                 );
             }
-            if g.notice_time > 0. {
-                self.center(&g.notice, 620., 15., c(PALE));
-            }
+            self.notice(g, 620., PALE, true);
         }
         if g.map && g.screen == Screen::Playing {
             draw_rectangle(0., 103., 1280., 530., INK.with_alpha(0.67));
@@ -1448,9 +1471,8 @@ impl Ui {
             &format!("{}   Continue the descent", g.prompts().menu(Menu::Confirm)),
             CAMP_BUTTON,
         );
-        if g.notice_time > 0. {
-            self.center(&g.notice, 520., 15., c(TEAL));
-        }
+        // The Keeper's panel is plain, so its notice needs no band.
+        self.notice(g, 520., TEAL, false);
     }
     fn result(&self, g: &Game) {
         let win = g.screen == Screen::Victory;

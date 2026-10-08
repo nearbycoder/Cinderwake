@@ -115,6 +115,15 @@ pub const FALL_LEAD: f32 = 125.;
 /// and how far down the view the hero then stands, in world units.
 pub const LOOK_HOLD: f32 = 0.4;
 pub const LOOK_AT: f32 = 136.;
+/// Notices fade in over this many seconds and out over their last half
+/// second.
+pub const NOTICE_FADE_IN: f32 = 0.15;
+pub const NOTICE_FADE_OUT: f32 = 0.5;
+/// How long a notice stays up: four seconds, and up to six for the longest,
+/// so there's time to read it.
+pub fn notice_seconds(text: &str) -> f32 {
+    (4. + (text.chars().count() as f32 - 40.).max(0.) / 20.).min(6.)
+}
 /// Shortest gap between two windup tells.
 pub const TELL_GAP: f32 = 0.2;
 /// What ended a run.
@@ -477,7 +486,9 @@ pub struct Game {
     pub stage: u32,
     pub seed: u64,
     pub notice: String,
+    /// Seconds the notice has left, and how long it was given.
     pub notice_time: f32,
+    pub notice_life: f32,
     pub sounds: Vec<Sfx>,
     pub rng: Rng,
     visual_rng: VisualRng,
@@ -632,6 +643,7 @@ impl Game {
             seed,
             notice: String::new(),
             notice_time: 0.,
+            notice_life: 0.,
             sounds: vec![],
             rng: Rng(seed.max(1)),
             visual_rng: VisualRng::new(seed),
@@ -719,7 +731,16 @@ impl Game {
     }
     pub fn notify(&mut self, s: &str) {
         self.notice = s.into();
-        self.notice_time = 4.;
+        self.notice_life = notice_seconds(s);
+        self.notice_time = self.notice_life;
+    }
+    /// The notice's opacity: it fades in quickly and out over its last
+    /// half second.
+    pub fn notice_alpha(&self) -> f32 {
+        let shown = (self.notice_life - self.notice_time).max(0.);
+        (shown / NOTICE_FADE_IN)
+            .min(self.notice_time / NOTICE_FADE_OUT)
+            .clamp(0., 1.)
     }
     fn effect(&mut self, effect: Effect, pos: Vec2, dir: f32) {
         let floor = self
@@ -4278,5 +4299,35 @@ mod tests {
         }
         assert_eq!(g.player.pos.y, FLOOR + 120.);
         assert!(g.look < 1., "dropping eases the look back");
+    }
+    #[test]
+    fn notices_fade_in_and_out_and_stay_longer_when_long() {
+        assert_eq!(notice_seconds("Weapon tempered."), 4.);
+        let lore = "\"We built the sun a cage. Then wondered why it burned.\" - The Keeper";
+        assert!(notice_seconds(lore) > 5. && notice_seconds(lore) <= 6.);
+        assert_eq!(notice_seconds(&"x".repeat(400)), 6.);
+        let mut g = game();
+        g.notify(lore);
+        assert_eq!(g.notice_alpha(), 0., "it fades in");
+        let steps = |s: f32| (s / STEP).round() as usize;
+        for _ in 0..steps(NOTICE_FADE_IN) {
+            g.tick(STEP, Input::default());
+        }
+        assert!(g.notice_alpha() > 0.99);
+        while g.notice_time > NOTICE_FADE_OUT / 2. {
+            g.tick(STEP, Input::default());
+            assert!(
+                g.notice_alpha() > 0.49,
+                "it holds until its last half second"
+            );
+        }
+        assert!((g.notice_alpha() - 0.5).abs() < 0.02, "then fades out");
+        let mut shown = steps(notice_seconds(lore) - NOTICE_FADE_OUT / 2.);
+        while g.notice_time > 0. {
+            g.tick(STEP, Input::default());
+            shown += 1;
+        }
+        assert_eq!(g.notice_alpha(), 0.);
+        assert!(shown.abs_diff(steps(notice_seconds(lore))) <= 1);
     }
 }
