@@ -13,6 +13,11 @@ uniform vec4 Grade;
 #define LIGHTS 8
 uniform vec4 Lights[LIGHTS];
 uniform vec4 LightColors[LIGHTS];
+// Ultra adds a wider halo, sharpening, and a soft highlight shoulder.
+#define ULTRA 0
+#if ULTRA
+uniform sampler2D BloomWide;
+#endif
 // The scene's size in texels, and window pixels per scene texel.
 uniform vec2 SceneSize;
 uniform float Scale;
@@ -38,11 +43,22 @@ vec3 scene(vec2 at) {
 }
 void main() {
     vec3 source = scene(uv);
+#if ULTRA
+    // Filtering the supersampled scene down softens it a little; a gentle
+    // unsharp mask, one window pixel wide, brings the edges back.
+    vec2 nudge = vec2(max(1.0, 1.0 / Scale)) / SceneSize;
+    vec3 around = scene(uv + vec2(nudge.x, 0.0)) + scene(uv - vec2(nudge.x, 0.0))
+        + scene(uv + vec2(0.0, nudge.y)) + scene(uv - vec2(0.0, nudge.y));
+    source = max(source + (source - around * 0.25) * 0.3, 0.0);
+#endif
     vec3 glow = texture2D(Bloom, uv).rgb;
     // The world keeps its hard pixels, and the soft bloom only adds light.
     vec3 c = source * Grade.rgb;
     c = (c - 0.18) * 1.035 + 0.18;
     c += glow * Grade.a * (1.0 - c * 0.42);
+#if ULTRA
+    c += texture2D(BloomWide, uv).rgb * Grade.a * 0.45 * (1.0 - c * 0.42);
+#endif
     vec2 screenUv = vec2(uv.x, 1.0 - uv.y);
     vec2 world = screenUv * vec2(640.0, 360.0);
     for (int i = 0; i < LIGHTS; i++) {
@@ -53,5 +69,10 @@ void main() {
     vec2 centered = screenUv * 2.0 - 1.0;
     float vignette = smoothstep(0.38, 1.65, dot(centered, centered));
     c *= 1.0 - vignette * 0.16;
+#if ULTRA
+    // Bright light rolls off over the top fifth instead of clipping flat.
+    vec3 over = max(c - 0.8, 0.0);
+    c = min(c, 0.8) + 0.2 * (1.0 - exp(-over / 0.2));
+#endif
     gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }

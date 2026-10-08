@@ -83,6 +83,12 @@ impl Fidelity {
     pub fn smooth_textures(self) -> bool {
         self == Self::Ultra
     }
+    /// Whether lamps, forges, wells, and the bellgate light their
+    /// surroundings, a second, wider bloom halo is added, and bright light
+    /// rolls off softly instead of clipping.
+    pub fn scenery_lights(self) -> bool {
+        self == Self::Ultra
+    }
     /// Particles emitted per effect, relative to High.
     pub fn particle_density(self) -> f32 {
         match self {

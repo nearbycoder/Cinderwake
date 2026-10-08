@@ -715,8 +715,10 @@ impl Game {
         let settings = self.settings.clone();
         let practice = self.practice;
         let teach = self.teach;
+        let session_fidelity = self.session_fidelity;
         *self = Self::new(self.seed.wrapping_add(173), save);
         self.settings = settings;
+        self.session_fidelity = session_fidelity;
         self.teach = teach;
         self.practice = practice;
         self.screen = Screen::Playing;
@@ -2104,8 +2106,10 @@ impl Game {
         };
         let (save, settings) = (self.save.clone(), self.settings.clone());
         let (practice, teach) = (self.practice, self.teach);
+        let session_fidelity = self.session_fidelity;
         *self = Self::new(c.seed, save);
         self.settings = settings;
+        self.session_fidelity = session_fidelity;
         self.practice = practice;
         self.teach = teach;
         self.stage = c.stage;
@@ -2175,6 +2179,21 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_launch_flags_fidelity_lasts_the_whole_session() {
+        let mut g = Game::new(4017, Save::default());
+        g.session_fidelity = Some(crate::fidelity::Fidelity::Ultra);
+        g.start();
+        assert_eq!(g.fidelity(), crate::fidelity::Fidelity::Ultra);
+        assert_eq!(
+            g.settings.fidelity,
+            crate::fidelity::Fidelity::High,
+            "the saved choice is untouched"
+        );
+        g.session_fidelity = None;
+        assert_eq!(g.fidelity(), crate::fidelity::Fidelity::High);
+    }
+
     fn game() -> Game {
         let mut g = Game::new(42, Save::default());
         g.practice = true;

@@ -3,6 +3,32 @@
 use crate::world::{Biome, Level, Object, ObjectKind, FLOOR};
 use macroquad::prelude::*;
 
+/// The height of the dressing stood on the `i`th platform.
+fn dressing_height(i: usize) -> f32 {
+    if i.is_multiple_of(3) {
+        38.
+    } else {
+        27.
+    }
+}
+/// Whether a biome's platform dressing carries a lamp.
+fn lit_dressing(biome: Biome) -> bool {
+    matches!(biome, Biome::Aqueduct | Biome::Foundry)
+}
+/// Where each lamp on the platforms' dressing burns, in world units, with its
+/// platform's index (for flicker), from the same placement `dressing` draws.
+pub fn lamps(level: &Level) -> impl Iterator<Item = (usize, Vec2)> + '_ {
+    level
+        .platforms
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.w >= 140. && lit_dressing(level.biome))
+        .map(|(i, p)| {
+            let height = dressing_height(i);
+            (i, vec2(p.x + 30., p.y - height * 0.52 - height * 0.1))
+        })
+}
+
 /// Position within a biome, shared by panorama composition and the area label.
 pub fn progress(cam: f32, level_width: f32) -> f32 {
     if level_width <= 640. {
@@ -513,15 +539,9 @@ impl Environment {
             }
             let x = platform.x + 30. - cam;
             if (-70. ..710.).contains(&x) {
-                self.terrain.grounded(
-                    row + 3,
-                    x,
-                    platform.y,
-                    if i % 3 == 0 { 38. } else { 27. },
-                    0.82,
-                );
-                let height = if i % 3 == 0 { 38. } else { 27. };
-                if matches!(level.biome, Biome::Aqueduct | Biome::Foundry) {
+                let height = dressing_height(i);
+                self.terrain.grounded(row + 3, x, platform.y, height, 0.82);
+                if lit_dressing(level.biome) {
                     let flicker = 0.8 + 0.2 * (time * 9. + i as f32 * 4.).sin();
                     self.mechanisms.grounded(
                         7,
