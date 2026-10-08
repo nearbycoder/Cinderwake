@@ -55,6 +55,8 @@ impl PostProcess {
                             textures: vec!["Bloom".into()],
                             uniforms: vec![
                                 UniformDesc::new("Grade", UniformType::Float4),
+                                UniformDesc::new("SceneSize", UniformType::Float2),
+                                UniformDesc::new("Scale", UniformType::Float1),
                                 UniformDesc::array(
                                     UniformDesc::new("Lights", UniformType::Float4),
                                     lights,
@@ -144,7 +146,9 @@ impl PostProcess {
         composite.set_uniform_array("LightColors", &colors);
     }
 
-    pub fn draw(&self, scene: &Texture2D, rect: Rect, fidelity: Fidelity) {
+    /// Draws the scene into `rect`, which covers `pixels` window pixels
+    /// across.
+    pub fn draw(&self, scene: &Texture2D, rect: Rect, pixels: f32, fidelity: Fidelity) {
         if fidelity.post() {
             if let Some((_, material)) = self
                 .pipeline
@@ -152,6 +156,8 @@ impl PostProcess {
                 .flat_map(|p| &p.composites)
                 .find(|(f, _)| *f == fidelity)
             {
+                material.set_uniform("SceneSize", scene.size());
+                material.set_uniform("Scale", pixels / scene.width());
                 gl_use_material(material);
             }
         }

@@ -1648,7 +1648,12 @@ async fn main() {
         clear_background(render::INK);
         let (frame_rect, viewport) = letterbox(screen_width(), screen_height(), screen_dpi_scale());
         let Rect { x, y, w, h } = frame_rect;
-        postfx.draw(&target.texture, frame_rect, fidelity);
+        postfx.draw(
+            &target.texture,
+            frame_rect,
+            w * screen_dpi_scale(),
+            fidelity,
+        );
         if arrival > 0. && !sprite_preview {
             let amount = arrival / 0.45;
             draw_rectangle(x, y, w, h, render::INK.with_alpha(amount * amount));
