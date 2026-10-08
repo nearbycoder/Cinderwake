@@ -322,6 +322,16 @@ cargo run --release --locked -- --start-at chest
 
 The run uses the practice seed and isolation: no progress or settings are read or written, tips stay off, and the HUD shows that progress isn't saved. Guardians within chase range of the start point (320 units across, 150 up or down) are removed. The forge start carries 60 copper and the cache start counts eight kills, so both open at once. With the fixed seed, the first reliquary offers the Furnace Maul, so the weapon choice always appears. An unknown target prints the valid list and exits with status 2; the browser build ignores it. This is a testing tool, not a game mode.
 
+### Recording the trailer
+
+`scripts/record-trailer.sh` re-records the README's trailer (`docs/media/cinderwake-demo.mp4`), its teaser GIF, and the README screenshots. It builds the release binary, then runs the motion capture, the vertical capture, the environment tour, `--ui-gallery`, and `--gallery` at `--fidelity ultra --window-size 1920x1080` inside a private nested KWin (see above), writing everything under `target/trailer/`, which git ignores and which holds several gigabytes afterwards. [`scripts/trailer.py`](../scripts/trailer.py) then cuts the captures into sections, adds captions in the game's font, and mixes the soundtrack from the game's own files: each section's biome loop at the default music volume and, under the scripted captures, the effects those frames played at the default effects volume. The mix is normalised to −16 LUFS, and the video is encoded at 1080p, 30 fps, H.264 and AAC.
+
+The captures take `--trailer` for this: they save 30 frames a second instead of 20, leave out their on-screen labels and the practice marker, and write the sound cues each frame played to `cues.txt` beside the frames. The captions say instead what each section is (scripted input, guardians removed, a staged camera tour). Players never see the flag; it changes no gameplay.
+
+```sh
+scripts/record-trailer.sh > target/trailer.log 2>&1
+```
+
 Capture directories are reused on subsequent runs. Keep separate copies when comparing versions or shader settings. Videos in the README are edited from capture output; they are not recorded human playthroughs.
 
 ### Compare shaders and CPU submission cost

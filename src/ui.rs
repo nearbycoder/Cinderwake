@@ -352,6 +352,9 @@ pub fn click_at(g: &Game, at: Vec2) -> Option<Click> {
 pub struct Ui {
     font: Option<Font>,
     skin: Skin,
+    /// Whether practice runs say that progress isn't saved. Only trailer
+    /// captures (`--trailer`) turn this off.
+    pub practice_label: bool,
 }
 impl Ui {
     pub fn new() -> Self {
@@ -368,6 +371,7 @@ impl Ui {
         Self {
             font,
             skin: Skin::new(),
+            practice_label: true,
         }
     }
     fn text(&self, s: &str, x: f32, y: f32, size: f32, col: Color) {
@@ -1084,7 +1088,7 @@ impl Ui {
         if let Some(e) = &g.save_error {
             self.text(&format!("SAVE FAILED: {e}"), 20., 632., 13., RED);
         }
-        if g.practice {
+        if g.practice && self.practice_label {
             self.text(
                 "PRACTICE / PROGRESS NOT SAVED",
                 20.,

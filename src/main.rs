@@ -1149,6 +1149,24 @@ async fn main() {
     let pacing_check = args.iter().any(|s| s == "--pacing-check");
     let demo = args.iter().any(|s| s == "--demo") || automated;
     let staged = ui_gallery || gallery || environment_tour;
+    // Trailer footage: the motion, vertical, and tour captures save 30 frames a
+    // second instead of 20, leave out their labels and the practice marker,
+    // and list the sound cues each frame played, for mixing the edit's audio.
+    let trailer = args.iter().any(|a| a == "--trailer");
+    let capture_stride = if trailer { 2 } else { 3 };
+    let mut cues = String::new();
+    // Where a frame sequence is saved, for the modes that save one.
+    let sequence = if ui_gallery {
+        None
+    } else if environment_tour {
+        Some("tour")
+    } else if vertical_capture {
+        Some("vertical")
+    } else if motion_capture {
+        Some("motion")
+    } else {
+        None
+    };
     // Testing aid: saves the frame every so many seconds of real time, so
     // runs driven from outside (such as scripts/virtual-pad.py) leave a record.
     let snapshot_every = args
@@ -1223,7 +1241,8 @@ async fn main() {
     }
     let mut traversal = traversal_capture::Traversal::new();
     let mut arrival_hold = 0_u32;
-    let ui = render::Ui::new();
+    let mut ui = render::Ui::new();
+    ui.practice_label = !trailer;
     let mut audio = audio::Audio::new().await;
     let mut art = art::Art::new();
     let mut postfx = postprocess::PostProcess::new();
@@ -1573,6 +1592,11 @@ async fn main() {
             }
         }
         let silent = automated || staged || sprite_preview;
+        if trailer && sequence.is_some() {
+            for cue in &g.sounds {
+                cues.push_str(&format!("{frame} {}\n", format!("{cue:?}").to_lowercase()));
+            }
+        }
         let score = audio::Track::for_game(&g);
         audio.update(
             &mut g.sounds,
@@ -1696,7 +1720,9 @@ async fn main() {
             // Nothing to draw between, so the next frame starts from here.
             pose.record(&g);
         }
-        if environment_tour && !ui_gallery {
+        if trailer {
+            // The trailer's captions say what each capture is.
+        } else if environment_tour && !ui_gallery {
             draw_text(
                 "STAGED ENVIRONMENT TOUR / CAMERA TRAVERSAL",
                 20.,
@@ -1750,17 +1776,7 @@ async fn main() {
             };
             get_screen_data().export_png(&path);
         }
-        if (environment_tour || motion_capture || vertical_capture)
-            && !ui_gallery
-            && frame.is_multiple_of(3)
-        {
-            let directory = if environment_tour {
-                "tour"
-            } else if vertical_capture {
-                "vertical"
-            } else {
-                "motion"
-            };
+        if let Some(directory) = sequence.filter(|_| frame.is_multiple_of(capture_stride)) {
             std::fs::create_dir_all(format!("captures/{directory}")).ok();
             get_screen_data().export_png(&format!("captures/{directory}/frame-{frame:05}.png"));
         }
@@ -1817,6 +1833,10 @@ async fn main() {
         frame += 1;
         next_frame().await
     }
+    if let Some(directory) = sequence.filter(|_| trailer) {
+        std::fs::create_dir_all(format!("captures/{directory}")).ok();
+        std::fs::write(format!("captures/{directory}/cues.txt"), &cues).ok();
+    }
     if !render_times.is_empty() {
         render_times.sort_by(f64::total_cmp);
         let mean = render_times.iter().sum::<f64>() / render_times.len() as f64;
@@ -1828,6 +1848,16 @@ async fn main() {
 #[cfg(test)]
 mod capture_tests {
     use super::*;
+
+    #[test]
+    fn trailer_cue_names_match_their_sound_files() {
+        // scripts/trailer.py mixes `assets/<name>.wav` for each logged cue.
+        for cue in Sfx::ALL {
+            let name = format!("{cue:?}").to_lowercase();
+            let path = format!("{}/assets/{name}.wav", env!("CARGO_MANIFEST_DIR"));
+            assert!(std::path::Path::new(&path).exists(), "{path}");
+        }
+    }
 
     #[test]
     fn game_speed_slows_play_but_not_menus_or_scripted_modes() {
