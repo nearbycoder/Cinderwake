@@ -1285,7 +1285,7 @@ async fn main() {
                 miniquad::gl::glFinish()
             };
             bench.mark(frame, miniquad::date::now() * 1000.);
-            if bench::Bench::finished(frame) {
+            if bench::Bench::phase(frame) == bench::Phase::Finished {
                 println!(
                     "fidelity-bench {}x{} window pixels, renderer {}\n{}",
                     screen_width() * screen_dpi_scale(),
@@ -1295,17 +1295,17 @@ async fn main() {
                 );
                 break;
             }
-            if bench::Bench::step_frame(frame) == 0 {
-                // Every step replays the script from the same start.
+            if bench::Bench::script_frame(frame) == 0 {
+                // Every pass plays the script from the same start.
                 g = Game::new(seed, save::Save::default());
                 g.practice = true;
                 g.start();
                 motion_start(&mut g);
-                g.session_fidelity = Some(bench::Bench::fidelity(frame));
                 art.restart();
                 accumulator = 0.;
                 pending = Input::default();
             }
+            g.session_fidelity = Some(bench::Bench::fidelity(frame));
         }
         let frame_started = miniquad::date::now();
         if g.settings.fidelity != chosen_fidelity {
@@ -1487,7 +1487,7 @@ async fn main() {
         } else if motion_capture && !staged {
             input = motion_input(frame);
         } else if fidelity_bench {
-            input = motion_input(bench::Bench::step_frame(frame));
+            input = motion_input(bench::Bench::script_frame(frame));
         } else if demo && !staged {
             let t = frame as f32 / 60.;
             input = Input {
@@ -1787,7 +1787,7 @@ async fn main() {
         if capture && !ui_gallery && frame >= 900 {
             break;
         }
-        if fidelity_bench && bench::Bench::step_frame(frame) == bench::SHOT {
+        if fidelity_bench && bench::Bench::shot(frame) {
             std::fs::create_dir_all("captures/fidelity").ok();
             get_screen_data().export_png(&format!(
                 "captures/fidelity/{}.png",

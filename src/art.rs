@@ -167,6 +167,8 @@ pub struct Art {
     hero_opacity: f32,
     /// Whether textures are sampled from mipmaps (Ultra).
     smooth: bool,
+    /// Whether the mipmaps have been built.
+    mipmapped: bool,
     pub environment: crate::environment::Environment,
 }
 impl Art {
@@ -195,6 +197,7 @@ impl Art {
             dodge_trail: DodgeTrail::default(),
             hero_opacity: 1.,
             smooth: false,
+            mipmapped: false,
             boss: Atlas::new(
                 include_bytes!("../assets/sprites/regent-v1.png"),
                 4,
@@ -226,7 +229,10 @@ impl Art {
         {
             let id = texture.raw_miniquad_id();
             if smooth {
-                gl.quad_context.texture_generate_mipmaps(id);
+                // The art never changes, so its mipmaps are built once.
+                if !self.mipmapped {
+                    gl.quad_context.texture_generate_mipmaps(id);
+                }
                 gl.quad_context.texture_set_min_filter(
                     id,
                     FilterMode::Linear,
@@ -240,6 +246,7 @@ impl Art {
                 );
             }
         }
+        self.mipmapped |= smooth;
     }
     /// Forgets all animation state, as at launch, so a replayed script
     /// draws exactly the same frames again.
