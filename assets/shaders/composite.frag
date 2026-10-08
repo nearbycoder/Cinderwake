@@ -4,8 +4,10 @@ varying mediump vec2 uv;
 uniform sampler2D Texture;
 uniform sampler2D Bloom;
 uniform vec4 Grade;
-uniform vec4 Lights[8];
-uniform vec4 LightColors[8];
+// The renderer sets LIGHTS for each fidelity step.
+#define LIGHTS 8
+uniform vec4 Lights[LIGHTS];
+uniform vec4 LightColors[LIGHTS];
 void main() {
     vec3 source = texture2D(Texture, uv).rgb;
     vec3 glow = texture2D(Bloom, uv).rgb;
@@ -15,7 +17,7 @@ void main() {
     c += glow * Grade.a * (1.0 - c * 0.42);
     vec2 screenUv = vec2(uv.x, 1.0 - uv.y);
     vec2 world = screenUv * vec2(640.0, 360.0);
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < LIGHTS; i++) {
         vec2 delta = world - Lights[i].xy;
         float falloff = max(0.0, 1.0 - length(delta) / max(1.0, Lights[i].z));
         c += LightColors[i].rgb * falloff * falloff * Lights[i].w * (0.14 + source * 0.55);

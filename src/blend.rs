@@ -400,6 +400,7 @@ mod tests {
             at,
             1.,
             world::FLOOR,
+            crate::fidelity::Fidelity::High,
         );
         let longest = g
             .particles

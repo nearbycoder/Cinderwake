@@ -1,6 +1,7 @@
 //! Player preferences, stored apart from run progress. Settings change
 //! presentation and comfort only; they never touch gameplay randomness.
 use crate::controls::Bindings;
+use crate::fidelity::Fidelity;
 use serde::{Deserialize, Serialize};
 use std::io;
 
@@ -13,7 +14,10 @@ pub struct Settings {
     pub shake: u8,
     pub hitstop: bool,
     pub reduce_flashes: bool,
+    /// Kept in step with `fidelity` (off only at Low), so builds from
+    /// before the fidelity setting read the file sensibly.
     pub postfx: bool,
+    pub fidelity: Fidelity,
     pub muted: bool,
     /// Desktop builds start fullscreen when this is saved on.
     pub fullscreen: bool,
@@ -36,6 +40,7 @@ impl Default for Settings {
             hitstop: true,
             reduce_flashes: false,
             postfx: true,
+            fidelity: Fidelity::default(),
             muted: false,
             fullscreen: false,
             hints: true,
@@ -67,7 +72,20 @@ impl Settings {
         }
         self.speed = self.speed.clamp(Self::SLOWEST, 10);
         self.window = self.window.filter(|size| Self::window_fits(*size));
+        // Files from before the fidelity setting saved lighting off as
+        // `postfx: false`, which is Low now.
+        if !self.postfx {
+            self.fidelity = Fidelity::Low;
+        }
+        self.postfx = self.fidelity.post();
         self
+    }
+    /// The row that sets graphics fidelity.
+    pub const FIDELITY_ROW: usize = 5;
+    /// Sets graphics fidelity, keeping `postfx` in step.
+    pub fn set_fidelity(&mut self, fidelity: Fidelity) {
+        self.fidelity = fidelity;
+        self.postfx = fidelity.post();
     }
     /// The window opens at 1280 × 720 pixels unless another size was saved.
     pub const DEFAULT_WINDOW: [u32; 2] = [1280, 720];
@@ -115,7 +133,7 @@ impl Settings {
             2 => step(&mut self.shake),
             3 => self.hitstop = !self.hitstop,
             4 => self.reduce_flashes = !self.reduce_flashes,
-            5 => self.postfx = !self.postfx,
+            Self::FIDELITY_ROW => self.set_fidelity(self.fidelity.stepped(delta)),
             6 => {
                 // Switching tips back on replays them from the start.
                 self.hints = !self.hints;
@@ -131,8 +149,11 @@ impl Settings {
     /// Sets a level row directly, as a click on its bar does, within the
     /// same limits as stepping. Other rows are unchanged.
     pub fn set_level(&mut self, row: usize, level: u8) {
-        if let RowValue::Level(now) = self.row(row).1 {
-            self.adjust(row, level as i32 - now as i32);
+        match self.row(row).1 {
+            RowValue::Level(now) | RowValue::Steps(now, _) => {
+                self.adjust(row, level as i32 - now as i32)
+            }
+            _ => {}
         }
     }
     /// Label, current value as a 0..=10 level (for gauges) or switch, and help text.
@@ -163,10 +184,15 @@ impl Settings {
                 RowValue::Switch(self.reduce_flashes),
                 "Dims impact flashes, shockwave rings, and combat light bursts.",
             ),
-            5 => (
-                "Lighting and bloom",
-                RowValue::Switch(self.postfx),
-                "Post-processing, also toggled with F9. Turn off on slower graphics.",
+            Self::FIDELITY_ROW => (
+                "Graphics fidelity",
+                RowValue::Steps(self.fidelity.index(), &FIDELITY_STEPS),
+                match self.fidelity {
+                    Fidelity::Low => "Low: no lighting or bloom, fewer particles. For slower graphics. F9 cycles.",
+                    Fidelity::Medium => "Medium: softer bloom and fewer combat lights. F9 cycles.",
+                    Fidelity::High => "High: bloom, grading, and combat lighting. F9 cycles.",
+                    Fidelity::Ultra => "Ultra: smoothed scene, lit scenery, richer bloom, more particles. F9 cycles.",
+                },
             ),
             6 => (
                 "Gameplay tips",
@@ -192,12 +218,30 @@ impl Settings {
     }
 }
 
+const FIDELITY_STEPS: [&str; 4] = ["LOW", "MEDIUM", "HIGH", "ULTRA"];
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RowValue {
     Level(u8),
+    /// One of a few named steps, chosen like a level.
+    Steps(u8, &'static [&'static str]),
     Switch(bool),
     /// Opens another page with Enter.
     Page,
+}
+impl RowValue {
+    /// Bars and steps are adjusted left and right, with arrows when selected.
+    pub fn is_bar(self) -> bool {
+        matches!(self, Self::Level(_) | Self::Steps(..))
+    }
+    /// The values a click on one of the bar's segments sets, in order.
+    pub fn segments(self) -> Vec<u8> {
+        match self {
+            Self::Level(_) => (1..=10).collect(),
+            Self::Steps(_, names) => (0..names.len() as u8).collect(),
+            _ => vec![],
+        }
+    }
 }
 
 #[cfg(test)]
@@ -271,6 +315,43 @@ mod tests {
         let before = s.clone();
         s.set_level(3, 1);
         assert_eq!(s, before, "switches aren't levels");
+    }
+
+    #[test]
+    fn graphics_fidelity_steps_like_a_bar_and_keeps_postfx_in_step() {
+        let mut s = Settings::default();
+        let row = Settings::FIDELITY_ROW;
+        assert_eq!(s.fidelity, Fidelity::High, "today's look is the default");
+        assert_eq!(s.row(row).1, RowValue::Steps(2, &FIDELITY_STEPS));
+        assert!(s.row(row).1.is_bar());
+        assert_eq!(s.row(row).1.segments(), vec![0, 1, 2, 3]);
+        s.adjust(row, 1);
+        assert_eq!(s.fidelity, Fidelity::Ultra);
+        s.adjust(row, 1);
+        assert_eq!(s.fidelity, Fidelity::Ultra, "stops at Ultra");
+        for _ in 0..5 {
+            s.adjust(row, -1);
+        }
+        assert_eq!((s.fidelity, s.postfx), (Fidelity::Low, false));
+        s.set_level(row, 1);
+        assert_eq!((s.fidelity, s.postfx), (Fidelity::Medium, true));
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"fidelity\":\"medium\""), "{json}");
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.sanitized().fidelity, Fidelity::Medium);
+    }
+
+    #[test]
+    fn files_saved_before_fidelity_keep_their_lighting_choice() {
+        let load = |json: &str| serde_json::from_str::<Settings>(json).unwrap().sanitized();
+        assert_eq!(load("{}").fidelity, Fidelity::High);
+        assert_eq!(load("{\"postfx\":true}").fidelity, Fidelity::High);
+        let off = load("{\"postfx\":false}");
+        assert_eq!((off.fidelity, off.postfx), (Fidelity::Low, false));
+        let ultra = load("{\"fidelity\":\"ultra\",\"postfx\":true}");
+        assert_eq!((ultra.fidelity, ultra.postfx), (Fidelity::Ultra, true));
+        let low = load("{\"fidelity\":\"low\",\"postfx\":true}");
+        assert!(!low.postfx, "postfx follows the saved fidelity");
     }
 
     #[test]

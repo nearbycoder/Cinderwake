@@ -501,6 +501,9 @@ pub struct Game {
     footstep_distance: f32,
     pub map: bool,
     pub settings: Settings,
+    /// Graphics fidelity chosen by a launch flag for this session only; it's
+    /// never saved, and choosing one in the game replaces it.
+    pub session_fidelity: Option<crate::fidelity::Fidelity>,
     /// Screen to return to when the options page closes.
     pub options_from: Screen,
     pub options_row: usize,
@@ -656,6 +659,7 @@ impl Game {
             footstep_distance: 0.,
             map: false,
             settings: Settings::default(),
+            session_fidelity: None,
             options_from: Screen::Title,
             options_row: 0,
             controls_row: 0,
@@ -753,6 +757,7 @@ impl Game {
             .support_at(pos.x, pos.y)
             .map(|platform| platform.y)
             .unwrap_or(self.level.max_y);
+        let fidelity = self.fidelity();
         particles::emit(
             &mut self.particles,
             &mut self.visual_rng,
@@ -760,7 +765,13 @@ impl Game {
             pos,
             dir,
             floor,
+            fidelity,
         );
+    }
+    /// The graphics fidelity in use: a launch flag's choice for this session,
+    /// or the saved one.
+    pub fn fidelity(&self) -> crate::fidelity::Fidelity {
+        self.session_fidelity.unwrap_or(self.settings.fidelity)
     }
     pub fn label(&mut self, pos: Vec2, text: String, color: Color) {
         self.texts.push(FloatText {

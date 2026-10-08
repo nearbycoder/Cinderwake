@@ -2,9 +2,11 @@ mod animation;
 mod art;
 mod atlas;
 mod audio;
+mod bench;
 mod blend;
 mod controls;
 mod environment;
+mod fidelity;
 mod game;
 mod icon;
 mod launch;
@@ -23,7 +25,7 @@ mod world;
 use game::*;
 use macroquad::prelude::*;
 /// Launch flags that keep the run apart from saved progress and settings.
-const ISOLATING_FLAGS: [&str; 10] = [
+const ISOLATING_FLAGS: [&str; 11] = [
     "--capture",
     "--gallery",
     "--sprite-preview",
@@ -34,6 +36,7 @@ const ISOLATING_FLAGS: [&str; 10] = [
     "--demo",
     "--start-at",
     "--pacing-check",
+    "--fidelity-bench",
 ];
 fn isolated(args: &[String]) -> bool {
     args.iter().any(|a| ISOLATING_FLAGS.contains(&a.as_str()))
@@ -89,9 +92,21 @@ impl WindowWatch {
         (settled && saved.unwrap_or(settings::Settings::DEFAULT_WINDOW) != size).then_some(size)
     }
 }
+/// Testing aid: `--window-size 1920x1080` opens a capture or benchmark
+/// window at that size instead of 1280 × 720.
+fn window_size_flag(args: &[String]) -> Option<[u32; 2]> {
+    let value = args.get(args.iter().position(|a| a == "--window-size")? + 1)?;
+    let (w, h) = value.split_once('x')?;
+    let size = [w.parse().ok()?, h.parse().ok()?];
+    (isolated(args) && settings::Settings::window_fits(size)).then_some(size)
+}
 fn conf() -> Conf {
-    let [window_width, window_height] =
-        saved_window().unwrap_or(settings::Settings::DEFAULT_WINDOW);
+    let args: Vec<String> = std::env::args().collect();
+    let [window_width, window_height] = window_size_flag(&args)
+        .or_else(saved_window)
+        .unwrap_or(settings::Settings::DEFAULT_WINDOW);
+    // The fidelity benchmark measures frames, not the display's refresh.
+    let bench = args.iter().any(|a| a == "--fidelity-bench");
     Conf {
         window_title: "Cinderwake — A Clockwork Roguelite".into(),
         window_width: window_width as i32,
@@ -106,6 +121,7 @@ fn conf() -> Conf {
         },
         platform: miniquad::conf::Platform {
             linux_wm_class: "cinderwake",
+            swap_interval: bench.then_some(0),
             ..Default::default()
         },
         ..Default::default()
@@ -377,7 +393,7 @@ fn options_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
                 }
                 RowValue::Switch(_) => g.settings.adjust(row, 1),
                 // A bar's name only selects it.
-                RowValue::Level(_) => {}
+                RowValue::Level(_) | RowValue::Steps(..) => {}
             }
         }
         Some(Click::Level(row, level)) => {
@@ -401,9 +417,7 @@ fn options_menu(g: &mut Game, keys: &MenuKeys, pad: &pad::Pad) {
     match keys.repeat {
         Some(Dir::Up) => g.options_row = g.options_row.saturating_sub(1),
         Some(Dir::Down) => g.options_row = (g.options_row + 1).min(rows - 1),
-        Some(d @ (Dir::Left | Dir::Right))
-            if matches!(g.settings.row(g.options_row).1, RowValue::Level(_)) =>
-        {
+        Some(d @ (Dir::Left | Dir::Right)) if g.settings.row(g.options_row).1.is_bar() => {
             let before = g.settings.clone();
             g.settings
                 .adjust(g.options_row, if d == Dir::Left { -1 } else { 1 });
@@ -587,7 +601,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 41] = [
+const UI_GALLERY_NAMES: [&str; 42] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -629,6 +643,7 @@ const UI_GALLERY_NAMES: [&str; 41] = [
     "ui-38-notice-in-play",
     "ui-39-flask-drinking",
     "ui-40-flask-interrupted",
+    "ui-41-options-fidelity",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -995,6 +1010,14 @@ fn ui_fixture(index: usize) -> Game {
             g.player.heal_time = game::DRINK_TIME * 0.45;
             g.hurt(5., -1., game::Cause::Hazard);
         }
+        41 => {
+            // The world behind is drawn at Ultra too.
+            g.screen = Screen::Paused;
+            g.open_options();
+            g.options_row = settings::Settings::FIDELITY_ROW;
+            g.settings.set_fidelity(fidelity::Fidelity::Ultra);
+            g.pointer = Some(vec2(847., 367.));
+        }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
     g
@@ -1043,6 +1066,27 @@ fn prepare_tour_frame(g: &mut Game, frame: u32) {
 
 // Scripted inputs still pass through the normal physics and combat simulation.
 // The opening heal is safe and observable before the player enters combat.
+/// The graphics driver's name for the GPU, for benchmark reports.
+fn gl_renderer() -> String {
+    #[cfg(not(target_arch = "wasm32"))]
+    // SAFETY: GL_RENDERER is a valid name, and the driver returns a static,
+    // NUL-terminated string (or null).
+    unsafe {
+        let name = miniquad::gl::glGetString(0x1F01);
+        if !name.is_null() {
+            return std::ffi::CStr::from_ptr(name as *const _)
+                .to_string_lossy()
+                .into_owned();
+        }
+    }
+    "unknown".into()
+}
+/// The motion capture's opening: low on vitality, so a flask shows.
+fn motion_start(g: &mut Game) {
+    g.player.hp = g.player.max_hp * 0.45;
+    g.intro = 0.;
+    g.notice_time = 0.;
+}
 fn motion_input(frame: u32) -> Input {
     Input {
         axis: if (160..300).contains(&frame) || frame >= 570 {
@@ -1088,7 +1132,8 @@ async fn main() {
     let environment_tour = args.iter().any(|s| s == "--environment-tour");
     let motion_capture = args.iter().any(|s| s == "--motion-capture");
     let vertical_capture = args.iter().any(|s| s == "--vertical-capture");
-    let automated = capture || motion_capture || vertical_capture;
+    let fidelity_bench = args.iter().any(|s| s == "--fidelity-bench");
+    let automated = capture || motion_capture || vertical_capture || fidelity_bench;
     let no_postfx = args.iter().any(|s| s == "--no-postfx");
     let profile_render = args.iter().any(|s| s == "--profile-render");
     // Testing aid: measures how whole steps fall across real frames here.
@@ -1130,10 +1175,20 @@ async fn main() {
         Game::load(seed)
     };
     g.practice = practice;
-    // A launch flag disables lighting for this session without saving the choice.
-    if no_postfx {
-        g.settings.postfx = false;
-    }
+    // Launch flags choose a fidelity for this session without saving it.
+    let launch_fidelity = match args.iter().position(|a| a == "--fidelity") {
+        Some(i) => Some(
+            args.get(i + 1)
+                .and_then(|v| fidelity::Fidelity::parse(v))
+                .unwrap_or_else(|| {
+                    eprintln!("--fidelity takes low, medium, high, or ultra");
+                    std::process::exit(2)
+                }),
+        ),
+        None => no_postfx.then_some(fidelity::Fidelity::Low),
+    };
+    g.session_fidelity = launch_fidelity;
+    let mut chosen_fidelity = g.settings.fidelity;
     if practice {
         g.start();
     }
@@ -1141,9 +1196,7 @@ async fn main() {
         target.apply(&mut g);
     }
     if motion_capture {
-        g.player.hp = g.player.max_hp * 0.45;
-        g.intro = 0.;
-        g.notice_time = 0.;
+        motion_start(&mut g);
     }
     if pacing_check {
         // Nothing should end the run while frame times are measured.
@@ -1164,7 +1217,7 @@ async fn main() {
     let ui = render::Ui::new();
     let mut audio = audio::Audio::new().await;
     let mut art = art::Art::new();
-    let postfx = postprocess::PostProcess::new();
+    let mut postfx = postprocess::PostProcess::new();
     let target = render_target(1280, 720);
     target.texture.set_filter(FilterMode::Nearest);
     let mut accumulator = 0.;
@@ -1203,10 +1256,46 @@ async fn main() {
     let mut previous_level = (g.level.seed, g.level.biome, g.seed);
     let mut arrival = 0.0_f32;
     let mut render_times = Vec::new();
+    let mut bench = bench::Bench::default();
     loop {
+        if fidelity_bench {
+            #[cfg(not(target_arch = "wasm32"))]
+            // SAFETY: a plain GL call on the thread that owns the context.
+            unsafe {
+                miniquad::gl::glFinish()
+            };
+            bench.mark(frame, miniquad::date::now() * 1000.);
+            if bench::Bench::finished(frame) {
+                println!(
+                    "fidelity-bench {}x{} window pixels, renderer {}\n{}",
+                    screen_width() * screen_dpi_scale(),
+                    screen_height() * screen_dpi_scale(),
+                    gl_renderer(),
+                    bench.report()
+                );
+                break;
+            }
+            if bench::Bench::step_frame(frame) == 0 {
+                // Every step replays the script from the same start.
+                g = Game::new(seed, save::Save::default());
+                g.practice = true;
+                g.start();
+                motion_start(&mut g);
+                g.session_fidelity = Some(bench::Bench::fidelity(frame));
+                art.restart();
+                accumulator = 0.;
+                pending = Input::default();
+            }
+        }
         let frame_started = miniquad::date::now();
+        if g.settings.fidelity != chosen_fidelity {
+            // Choosing a step in the game replaces a launch flag's.
+            chosen_fidelity = g.settings.fidelity;
+            g.session_fidelity = None;
+        }
         if ui_gallery {
             g = ui_fixture(frame as usize);
+            g.session_fidelity = launch_fidelity;
         } else if environment_tour {
             prepare_tour_frame(&mut g, frame);
         } else if gallery {
@@ -1357,15 +1446,16 @@ async fn main() {
             }
         }
         if !staged && !automated && is_key_pressed(KeyCode::F9) {
-            g.settings.postfx = !g.settings.postfx;
+            let next = g.fidelity().cycled();
+            g.settings.set_fidelity(next);
+            g.session_fidelity = None;
+            chosen_fidelity = next;
             g.persist_settings();
-            g.notify(if !postfx.available() {
-                "Cinematic lighting unavailable on this graphics backend."
-            } else if g.settings.postfx {
-                "Cinematic lighting enabled."
+            if next.post() && !postfx.available() {
+                g.notify("Lighting is unavailable on this graphics backend.");
             } else {
-                "Cinematic lighting disabled."
-            });
+                g.notify(&format!("Graphics fidelity: {}", next.name()));
+            }
         }
         let mut input = if staged {
             Input::default()
@@ -1376,6 +1466,8 @@ async fn main() {
             input = traversal.input(&g);
         } else if motion_capture && !staged {
             input = motion_input(frame);
+        } else if fidelity_bench {
+            input = motion_input(bench::Bench::step_frame(frame));
         } else if demo && !staged {
             let t = frame as f32 / 60.;
             input = Input {
@@ -1524,15 +1616,19 @@ async fn main() {
             set_camera(&camera);
             render::scene(&g, &art);
         }
-        let use_postfx = g.settings.postfx && !sprite_preview;
-        if use_postfx {
+        let fidelity = if sprite_preview {
+            fidelity::Fidelity::Low
+        } else {
+            g.fidelity()
+        };
+        if fidelity.post() {
             postfx.prepare(&target.texture, &g, camera_offset);
         }
         set_default_camera();
         clear_background(render::INK);
         let (frame_rect, viewport) = letterbox(screen_width(), screen_height(), screen_dpi_scale());
         let Rect { x, y, w, h } = frame_rect;
-        postfx.draw(&target.texture, frame_rect, use_postfx);
+        postfx.draw(&target.texture, frame_rect, fidelity);
         if arrival > 0. && !sprite_preview {
             let amount = arrival / 0.45;
             draw_rectangle(x, y, w, h, render::INK.with_alpha(amount * amount));
@@ -1642,6 +1738,13 @@ async fn main() {
         }
         if capture && !ui_gallery && frame >= 900 {
             break;
+        }
+        if fidelity_bench && bench::Bench::step_frame(frame) == bench::SHOT {
+            std::fs::create_dir_all("captures/fidelity").ok();
+            get_screen_data().export_png(&format!(
+                "captures/fidelity/{}.png",
+                bench::Bench::fidelity(frame).name().to_lowercase()
+            ));
         }
         if (environment_tour && frame + 1 >= TOUR_FRAMES)
             || (motion_capture && !staged && frame + 1 >= MOTION_FRAMES)
@@ -1865,6 +1968,12 @@ mod capture_tests {
         let hitstop = g.settings.hitstop;
         hold(&mut g, None, &[DpadRight], 1.5);
         assert_eq!(g.settings.hitstop, !hitstop);
+        // Fidelity steps like a bar and stops at Low.
+        g.options_row = settings::Settings::FIDELITY_ROW;
+        hold(&mut g, None, &[DpadLeft], 1.5);
+        assert_eq!(g.settings.fidelity, fidelity::Fidelity::Low);
+        hold(&mut g, Some(KeyCode::D), &[], 0.3);
+        assert_eq!(g.settings.fidelity, fidelity::Fidelity::Medium);
         // Up to the first row, where it stops.
         hold(&mut g, Some(KeyCode::W), &[], 2.);
         assert_eq!(g.options_row, 0);
@@ -2080,6 +2189,20 @@ mod capture_tests {
         assert_eq!(g.settings.music, 1);
         click(&mut g, Level(8, 1));
         assert_eq!(g.settings.speed, settings::Settings::SLOWEST);
+        // Graphics fidelity: a click on a step chooses it, the arrows step it,
+        // and a click on its name only selects it.
+        let fidelity_row = settings::Settings::FIDELITY_ROW;
+        click(&mut g, Row(fidelity_row));
+        assert_eq!(g.settings.fidelity, fidelity::Fidelity::High);
+        click(&mut g, Level(fidelity_row, 0));
+        assert_eq!(
+            (g.settings.fidelity, g.settings.postfx),
+            (fidelity::Fidelity::Low, false)
+        );
+        click(&mut g, Level(fidelity_row, 3));
+        assert_eq!(g.settings.fidelity, fidelity::Fidelity::Ultra);
+        click(&mut g, Step(fidelity_row, -1));
+        assert_eq!(g.settings.fidelity, fidelity::Fidelity::High);
         // A switch flips on a click anywhere on its row.
         click(&mut g, Row(3));
         assert!(!g.settings.hitstop);
@@ -2230,6 +2353,31 @@ mod capture_tests {
             frames(&mut watch, [500, 300], false, saved, 3.).is_empty(),
             "too small to keep"
         );
+    }
+
+    #[test]
+    fn the_window_size_flag_applies_only_to_testing_modes() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            window_size_flag(&args(&[
+                "c",
+                "--fidelity-bench",
+                "--window-size",
+                "1920x1080"
+            ])),
+            Some([1920, 1080])
+        );
+        assert_eq!(
+            window_size_flag(&args(&["c", "--window-size", "1920x1080"])),
+            None,
+            "play keeps its saved size"
+        );
+        for bad in ["300x200", "1920", "wide"] {
+            assert_eq!(
+                window_size_flag(&args(&["c", "--ui-gallery", "--window-size", bad])),
+                None
+            );
+        }
     }
 
     #[test]

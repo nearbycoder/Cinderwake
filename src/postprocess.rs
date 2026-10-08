@@ -1,18 +1,19 @@
 //! Low-resolution light diffusion is composited over the untouched nearest-
 //! sampled scene. The HUD is drawn afterwards and never enters either shader.
-use crate::{game::Game, world::Biome};
+use crate::{fidelity::Fidelity, game::Game, world::Biome};
 use macroquad::prelude::*;
 
 const VERTEX: &str = include_str!("../assets/shaders/fullscreen.vert");
 const BLOOM: &str = include_str!("../assets/shaders/bloom.frag");
 const COMPOSITE: &str = include_str!("../assets/shaders/composite.frag");
-const LIGHTS: usize = 8;
 
 struct Pipeline {
     blur: Material,
-    composite: Material,
-    horizontal: RenderTarget,
-    vertical: RenderTarget,
+    /// One composite shader per post-processed step, each built for its
+    /// light budget.
+    composites: Vec<(Fidelity, Material)>,
+    /// Bloom's horizontal and vertical targets, made for each size in use.
+    targets: Vec<((u32, u32), RenderTarget, RenderTarget)>,
 }
 
 pub struct PostProcess {
@@ -39,33 +40,39 @@ impl PostProcess {
                     ..Default::default()
                 },
             )?;
-            let composite = load_material(
-                ShaderSource::Glsl {
-                    vertex: VERTEX,
-                    fragment: COMPOSITE,
-                },
-                MaterialParams {
-                    textures: vec!["Bloom".into()],
-                    uniforms: vec![
-                        UniformDesc::new("Grade", UniformType::Float4),
-                        UniformDesc::array(UniformDesc::new("Lights", UniformType::Float4), LIGHTS),
-                        UniformDesc::array(
-                            UniformDesc::new("LightColors", UniformType::Float4),
-                            LIGHTS,
-                        ),
-                    ],
-                    ..Default::default()
-                },
-            )?;
-            let horizontal = render_target(640, 360);
-            let vertical = render_target(640, 360);
-            horizontal.texture.set_filter(FilterMode::Linear);
-            vertical.texture.set_filter(FilterMode::Linear);
+            let mut composites = vec![];
+            for fidelity in Fidelity::ALL.into_iter().filter(|f| f.post()) {
+                let lights = fidelity.lights();
+                let fragment = composite_source(fidelity);
+                composites.push((
+                    fidelity,
+                    load_material(
+                        ShaderSource::Glsl {
+                            vertex: VERTEX,
+                            fragment: &fragment,
+                        },
+                        MaterialParams {
+                            textures: vec!["Bloom".into()],
+                            uniforms: vec![
+                                UniformDesc::new("Grade", UniformType::Float4),
+                                UniformDesc::array(
+                                    UniformDesc::new("Lights", UniformType::Float4),
+                                    lights,
+                                ),
+                                UniformDesc::array(
+                                    UniformDesc::new("LightColors", UniformType::Float4),
+                                    lights,
+                                ),
+                            ],
+                            ..Default::default()
+                        },
+                    )?,
+                ));
+            }
             Ok(Pipeline {
                 blur,
-                composite,
-                horizontal,
-                vertical,
+                composites,
+                targets: vec![],
             })
         };
         let pipeline = match build() {
@@ -81,18 +88,34 @@ impl PostProcess {
         Self { pipeline }
     }
 
-    pub fn prepare(&self, scene: &Texture2D, game: &Game, camera_offset: Vec2) {
-        let Some(p) = &self.pipeline else { return };
+    pub fn prepare(&mut self, scene: &Texture2D, game: &Game, camera_offset: Vec2) {
+        let Some(p) = &mut self.pipeline else { return };
+        let fidelity = game.fidelity();
+        let Some(composite) = p
+            .composites
+            .iter()
+            .find(|(f, _)| *f == fidelity)
+            .map(|(_, m)| m.clone())
+        else {
+            return;
+        };
+        let size = fidelity.bloom_size();
+        if !p.targets.iter().any(|(s, ..)| *s == size) {
+            let make = || {
+                let target = render_target(size.0, size.1);
+                target.texture.set_filter(FilterMode::Linear);
+                target
+            };
+            p.targets.push((size, make(), make()));
+        }
+        let (_, horizontal, vertical) = p.targets.iter().find(|(s, ..)| *s == size).unwrap();
         // Every destination differs from its sampled source. Two 9-tap passes
         // give a soft emissive halo without ever blurring the sprite texture.
+        // Taps are spaced in the world's units whatever the targets' size, so
+        // the halo keeps its reach at every step.
         for (source, target, direction, extract) in [
-            (scene, &p.horizontal, vec2(2. / 1280., 0.), 1_f32),
-            (
-                &p.horizontal.texture,
-                &p.vertical,
-                vec2(0., 1. / 360.),
-                0_f32,
-            ),
+            (scene, horizontal, vec2(1. / 640., 0.), 1_f32),
+            (&horizontal.texture, vertical, vec2(0., 1. / 360.), 0_f32),
         ] {
             let mut camera = Camera2D::from_display_rect(Rect::new(0., 0., 640., 360.));
             camera.render_target = Some(target.clone());
@@ -114,17 +137,22 @@ impl PostProcess {
             );
             gl_use_default_material();
         }
-        p.composite.set_texture("Bloom", p.vertical.texture.clone());
-        p.composite.set_uniform("Grade", grade(game.level.biome));
-        let (lights, colors) = scene_lights(game, camera_offset);
-        p.composite.set_uniform_array("Lights", &lights);
-        p.composite.set_uniform_array("LightColors", &colors);
+        composite.set_texture("Bloom", vertical.texture.clone());
+        composite.set_uniform("Grade", grade(game.level.biome));
+        let (lights, colors) = scene_lights(game, camera_offset, fidelity.lights());
+        composite.set_uniform_array("Lights", &lights);
+        composite.set_uniform_array("LightColors", &colors);
     }
 
-    pub fn draw(&self, scene: &Texture2D, rect: Rect, enabled: bool) {
-        if enabled {
-            if let Some(p) = &self.pipeline {
-                gl_use_material(&p.composite);
+    pub fn draw(&self, scene: &Texture2D, rect: Rect, fidelity: Fidelity) {
+        if fidelity.post() {
+            if let Some((_, material)) = self
+                .pipeline
+                .iter()
+                .flat_map(|p| &p.composites)
+                .find(|(f, _)| *f == fidelity)
+            {
+                gl_use_material(material);
             }
         }
         draw_texture_ex(
@@ -142,6 +170,14 @@ impl PostProcess {
     }
 }
 
+/// The composite shader's source for one step: its light budget set.
+fn composite_source(fidelity: Fidelity) -> String {
+    COMPOSITE.replace(
+        "#define LIGHTS 8",
+        &format!("#define LIGHTS {}", fidelity.lights()),
+    )
+}
+
 fn grade(biome: Biome) -> Vec4 {
     // Neutral enough to preserve the original copper/teal art palette.
     match biome {
@@ -152,13 +188,15 @@ fn grade(biome: Biome) -> Vec4 {
     }
 }
 
-fn scene_lights(game: &Game, offset: Vec2) -> ([Vec4; LIGHTS], [Vec4; LIGHTS]) {
-    let mut lights = [Vec4::ZERO; LIGHTS];
-    let mut colors = [Vec4::ZERO; LIGHTS];
+/// Up to `budget` lights in view, in order of importance, and their colours;
+/// unused entries are zero.
+fn scene_lights(game: &Game, offset: Vec2, budget: usize) -> (Vec<Vec4>, Vec<Vec4>) {
+    let mut lights = vec![Vec4::ZERO; budget];
+    let mut colors = vec![Vec4::ZERO; budget];
     let mut count = 0;
     let camera = (game.camera * 2.).round() / 2.;
     let mut add = |pos: Vec2, radius: f32, strength: f32, color: Vec3| {
-        if count >= LIGHTS {
+        if count >= budget {
             return;
         }
         let pos = pos - vec2(camera, 0.) - offset;
@@ -230,7 +268,7 @@ mod tests {
         let mut g = Game::new(7, Save::default());
         g.camera = 300.;
         g.player.pos = vec2(510., 286.);
-        let (lights, _) = scene_lights(&g, vec2(2., -1.));
+        let (lights, _) = scene_lights(&g, vec2(2., -1.), 8);
         assert_eq!(lights[0].x, 208.);
         assert_eq!(lights[0].y, 266.);
         assert!(lights.iter().all(|l| l.is_finite()));
@@ -256,7 +294,7 @@ mod tests {
             life: 1.,
             tick: 0.,
         });
-        let (lights, _) = scene_lights(&g, vec2(0., 374.));
+        let (lights, _) = scene_lights(&g, vec2(0., 374.), 8);
         assert_eq!(lights.iter().filter(|l| l.w > 0.).count(), 2);
         assert_eq!(lights[1].y, 243.);
     }

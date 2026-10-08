@@ -1,8 +1,7 @@
 //! Event-driven effects. The visual random stream is independent of loot and world generation.
+use crate::fidelity::Fidelity;
 use crate::game::Game;
 use macroquad::prelude::*;
-
-pub const MAX_PARTICLES: usize = 512;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Kind {
@@ -73,10 +72,10 @@ pub enum Effect {
     Burn,
 }
 
-fn push(particles: &mut Vec<Particle>, particle: Particle) {
+fn push(particles: &mut Vec<Particle>, particle: Particle, cap: usize) {
     // Drop the oldest effect at saturation; every fresh combat cue still gets a chance to read.
-    if particles.len() >= MAX_PARTICLES {
-        particles.remove(0);
+    if particles.len() >= cap {
+        particles.drain(..=particles.len() - cap);
     }
     particles.push(particle);
 }
@@ -87,6 +86,7 @@ struct Emitter<'a> {
     pos: Vec2,
     dir: f32,
     floor: f32,
+    fidelity: Fidelity,
 }
 impl Emitter<'_> {
     #[allow(clippy::too_many_arguments)]
@@ -100,7 +100,7 @@ impl Emitter<'_> {
         size: (f32, f32),
         upward: bool,
     ) {
-        for _ in 0..count {
+        for _ in 0..self.fidelity.particles(count) {
             let angle = if upward {
                 self.rng.range(-2.95, -0.19)
             } else {
@@ -138,7 +138,7 @@ impl Emitter<'_> {
                 spin: self.rng.range(-7., 7.),
                 bounces: 0,
             };
-            push(self.particles, particle);
+            push(self.particles, particle, self.fidelity.particle_cap());
         }
     }
     fn shape(&mut self, kind: Kind, color: Color, radius: f32, life: f32) {
@@ -159,6 +159,7 @@ impl Emitter<'_> {
                 spin: 0.,
                 bounces: 0,
             },
+            self.fidelity.particle_cap(),
         );
     }
     fn sparks(&mut self, count: usize, color: Color, speed: f32) {
@@ -192,6 +193,7 @@ pub fn emit(
     pos: Vec2,
     dir: f32,
     floor: f32,
+    fidelity: Fidelity,
 ) {
     let mut e = Emitter {
         particles,
@@ -199,6 +201,7 @@ pub fn emit(
         pos,
         dir,
         floor,
+        fidelity,
     };
     let amber = Color::from_hex(0xffba67);
     let cream = Color::from_hex(0xffedbb);
@@ -594,6 +597,26 @@ mod tests {
     fn overload_is_bounded_and_all_effects_expire() {
         let mut particles = Vec::new();
         let mut rng = VisualRng::new(42);
+        for fidelity in Fidelity::ALL {
+            let mut particles = Vec::new();
+            for _ in 0..50 {
+                emit(
+                    &mut particles,
+                    &mut rng,
+                    Effect::Explosion,
+                    vec2(100., FLOOR - 3.),
+                    1.,
+                    FLOOR,
+                    fidelity,
+                );
+            }
+            assert_eq!(particles.len(), fidelity.particle_cap(), "{fidelity:?}");
+            for _ in 0..240 {
+                update(&mut particles, 1. / 120.);
+            }
+            assert!(particles.is_empty());
+        }
+        // Dropping to a lower step trims a fuller pool on the next effect.
         for _ in 0..50 {
             emit(
                 &mut particles,
@@ -602,13 +625,19 @@ mod tests {
                 vec2(100., FLOOR - 3.),
                 1.,
                 FLOOR,
+                Fidelity::Ultra,
             );
         }
-        assert_eq!(particles.len(), MAX_PARTICLES);
-        for _ in 0..240 {
-            update(&mut particles, 1. / 120.);
-        }
-        assert!(particles.is_empty());
+        emit(
+            &mut particles,
+            &mut rng,
+            Effect::Hit,
+            vec2(100., FLOOR - 3.),
+            1.,
+            FLOOR,
+            Fidelity::Low,
+        );
+        assert_eq!(particles.len(), Fidelity::Low.particle_cap());
     }
     #[test]
     fn rewound_shards_never_sink_below_their_floor() {
@@ -620,6 +649,7 @@ mod tests {
             vec2(100., FLOOR - 4.),
             1.,
             FLOOR,
+            Fidelity::High,
         );
         let mut bounced = false;
         for _ in 0..180 {
@@ -651,6 +681,7 @@ mod tests {
             vec2(100., FLOOR - 4.),
             1.,
             FLOOR,
+            Fidelity::High,
         );
         emit(
             &mut b,
@@ -659,6 +690,7 @@ mod tests {
             vec2(100., FLOOR - 4.),
             1.,
             FLOOR,
+            Fidelity::High,
         );
         assert_eq!(a.len(), b.len());
         for (a, b) in a.iter().zip(&b) {

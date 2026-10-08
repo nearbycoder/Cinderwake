@@ -201,6 +201,15 @@ impl Art {
             ),
         }
     }
+    /// Forgets all animation state, as at launch, so a replayed script
+    /// draws exactly the same frames again.
+    pub fn restart(&mut self) {
+        self.animator = Animator::new();
+        self.enemy_animations.clear();
+        self.generation = None;
+        self.dodge_trail = DodgeTrail::default();
+        self.hero_opacity = 1.;
+    }
     pub fn animate(&mut self, game: &Game, dt: f32) {
         let generation = (game.seed, game.stage, game.level.biome as u8);
         if self.generation != Some(generation) {

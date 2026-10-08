@@ -90,9 +90,16 @@ const CONTROLS_RESET: Rect = Rect::new(500., 446., 280., 30.);
 fn options_row(row: usize) -> Rect {
     Rect::new(300., 224. + row as f32 * 26., 680., 26.)
 }
-/// One step of an options bar, widened to cover the gaps beside it.
-fn options_segment(row: usize, i: usize) -> Rect {
-    Rect::new(637.5 + i as f32 * 24., 224. + row as f32 * 26., 24., 26.)
+/// One step of an options bar of `count` steps, widened to cover the gaps
+/// beside it. Every bar spans the same 240 units.
+fn options_segment(row: usize, i: usize, count: usize) -> Rect {
+    let width = 240. / count as f32;
+    Rect::new(
+        637.5 + i as f32 * width,
+        224. + row as f32 * 26.,
+        width,
+        26.,
+    )
 }
 /// The selected bar's < and > arrows.
 fn options_arrow(row: usize, up: bool) -> Rect {
@@ -200,16 +207,18 @@ pub fn targets(g: &Game) -> Vec<(Rect, Click)> {
         }
         Screen::Options => {
             let row = g.options_row;
-            if let RowValue::Level(_) = g.settings.row(row).1 {
+            if g.settings.row(row).1.is_bar() {
                 targets.push((options_arrow(row, false), Click::Step(row, -1)));
                 targets.push((options_arrow(row, true), Click::Step(row, 1)));
             }
             for row in 0..Settings::ROWS {
-                if let RowValue::Level(_) = g.settings.row(row).1 {
-                    targets.extend(
-                        (0..10).map(|i| (options_segment(row, i), Click::Level(row, i as u8 + 1))),
-                    );
-                }
+                let segments = g.settings.row(row).1.segments();
+                let count = segments.len();
+                targets.extend(
+                    segments.into_iter().enumerate().map(|(i, value)| {
+                        (options_segment(row, i, count), Click::Level(row, value))
+                    }),
+                );
                 targets.push((options_row(row), Click::Row(row)));
             }
             targets.push((OPTIONS_BACK, Click::Back));
@@ -1249,6 +1258,25 @@ impl Ui {
                         17.,
                         c(PALE),
                     );
+                }
+                RowValue::Steps(at, names) => {
+                    let width = 240. / names.len() as f32;
+                    for i in 0..names.len() {
+                        let rect = Rect::new(640. + i as f32 * width, y + 7., width - 5., 12.);
+                        let color = if i as u8 <= at {
+                            c(TEAL)
+                        } else {
+                            c(MUTED).with_alpha(0.22)
+                        };
+                        draw_rectangle(rect.x, rect.y, rect.w, rect.h, color);
+                    }
+                    if selected {
+                        for (up, glyph) in [(false, "<"), (true, ">")] {
+                            let r = options_arrow(row, up);
+                            self.centered_at(glyph, r.x + r.w / 2., y + 18., 19., c(GOLD));
+                        }
+                    }
+                    self.text(names[at as usize], 914., y + 18., 17., c(PALE));
                 }
                 RowValue::Page => {
                     self.text(
