@@ -617,3 +617,41 @@ Findings for a later round:
 - Looking below works on the stick and D-pad through the same `down` input, but wasn't tried with a controller.
 
 Still deferred: controller button rebinding and rumble (need a physical controller), the window's position and maximised state, animation frames between steps, new content (14), and a smaller web download (15). Owner decisions still open: one-use continue saves and whether the first biome saves, separate records for slowed runs, web hosting, releases and signing, shrinking the art, the trailer, a physical-controller test, the red tint's strength, sounds for refused presses, off-screen windups, and low vitality, the 0.15 s early-press window, guardian health, and now how far the camera should lead a fall and look below (125 and 112 units, chosen by measurement, not by feel).
+
+## Round 12 scope
+
+Six items, all from this round's focus on finish and presentation. The only graphics choice today is the **Lighting and bloom** switch (also **F9**): on, the scene gets 640 × 360 bloom, eight combat lights, and grading; off, none of it. Underneath, every texture is sampled nearest-neighbour: the 256-pixel character frames and 2,172-pixel backdrops are shrunk about 2.5 times into a 1,280 × 720 scene, so edges stair-step and shimmer as frames change and the camera pans. That scene is then stretched nearest-neighbour to the window, so at fractional sizes (1.25× scaling, a 1600 × 900 or 1366 × 768 window) some pixel columns are drawn twice as wide as their neighbours. Forges, wells, braziers, and the bellgate glow in their art but cast no light; only combat lights the world. Every menu appears and disappears in a single frame, and the vitality bar drops without showing how much a hit took.
+
+Gameplay, balance, saving, and content stay as they are. The look keeps its generated pixel art and palette; only its rendering quality changes. Each item gets the usual checks: `cargo fmt --check`, strict Clippy for native and `wasm32-unknown-unknown`, `cargo test --locked`, the capture modes, and screenshots in [`media/improvements/round12/`](media/improvements/round12/). Every native run happens inside a private nested KWin ([`scripts/nested-kwin.sh`](../scripts/nested-kwin.sh)) with a temporary `XDG_DATA_HOME`, and the real save folder is checked before and after. Frame times are noted with the load average at the time.
+
+### A. A Graphics Fidelity slider (Low, Medium, High, Ultra)
+
+- **Acceptance:** the **Lighting and bloom** switch becomes one **Graphics fidelity** row with four steps, adjusted like the other bars with keys, a held direction, the D-pad or stick, a click on a step, or the arrows. **Low** draws no post-processing and half the particles; **Medium** keeps bloom at half resolution with four combat lights; **High** is today's look and the default; **Ultra** adds items B and C. It's saved in `settings.json`; a file saved with lighting off opens on Low, and the old `postfx` field stays in step so older builds read it sensibly. **F9** steps through the four and names the step in a notice. `--no-postfx` still means Low for one session, and a new `--fidelity <step>` flag picks one for a session without saving it. A `--fidelity-bench` testing mode plays the motion capture's scripted fight at each step in turn in one window, at fixed simulated time so every step reaches the same frame, saves that frame for each step, and reports frame times with vertical sync off, waiting for the GPU at each frame so its work is counted.
+- **Verify:** unit tests of the steps, stepping and clicking, migration from `postfx`, and saving; the options fixture re-captured; `--fidelity-bench` run inside the nested KWin with a same-frame screenshot and frame-time table for every step, with the load noted.
+
+### B. Ultra: anti-aliased, supersampled scene and filtered textures
+
+- **Acceptance:** at Ultra the world is drawn into a 2,560 × 1,440 scene (twice today's) and filtered down to the window, and character, scenery, and backdrop textures are sampled from mipmaps with trilinear filtering (desktop; browsers without mipmaps on these texture sizes keep nearest sampling), so edges are smooth and stop shimmering while keeping the art's detail. The HUD is unchanged. Lower steps draw as before.
+- **Verify:** same-frame Ultra and High screenshots with enlarged crops of the hero, a guardian, and a rotating gear; the frame times from A's bench.
+
+### C. Ultra: lit scenery, richer bloom, and denser effects
+
+- **Acceptance:** at Ultra, forges, wells, the bellgate, and the biome's flames and lamps cast warm or cool light on their surroundings with a gentle flicker (respecting **Reduce flashes**), with up to sixteen lights instead of eight; bloom runs at full scene resolution with a second, wider halo; colour grading adds a soft filmic shoulder so bright effects don't clip; and effects emit half again as many particles from a 1,024-particle pool. Gameplay randomness doesn't change (particles already use their own random stream).
+- **Verify:** unit tests that scenery lights stay in view and within the budget, that more particles never change a simulated outcome, and that lower steps emit exactly as before at High; same-frame screenshots in each biome at High and Ultra.
+
+### D. Even pixels at every window size
+
+- **Acceptance:** at Medium and above, the finished scene is scaled to the window with a sharp-edged filter that keeps every pixel the same width at fractional sizes and blends only the one-pixel seam between them; at whole-number sizes it looks exactly as now. Low keeps plain nearest-neighbour scaling.
+- **Verify:** screenshots at 1600 × 900 and 1366 × 768 from a build of `main` and this one, with enlarged crops; a whole-number size (1280 × 720) compared against `main`.
+
+### E. Menus that ease in
+
+- **Acceptance:** the pause, options, controls, memory, reliquary, Keeper, death, victory, and atlas screens fade and rise into place over about 0.2 s (in real time, so slowed game speed doesn't slow them), and the world's dimming fades with them; the title panel fades in at launch. Input works from the first frame, and nothing waits on the animation. Staged fixtures and captures draw menus fully shown, so they don't change.
+- **Verify:** unit tests of the easing curve and that each screen change restarts it; frames captured during a transition in the release build inside the nested KWin.
+
+### F. A vitality bar that shows the hit
+
+- **Acceptance:** when the hero is hurt, the lost part of the vitality bar stays lit in a pale colour for about half a second, then drains to the new value; healing fills straight away. With **Reduce flashes** on the trail is drawn steadily and drains the same way. Nothing about damage changes.
+- **Verify:** unit tests of the trail after a hit, a heal, and a second hit; a `--ui-gallery` fixture showing a trail.
+
+Not in this round: new fonts (only Cormorant Garamond is in the repository, and adding a font is a licensing choice), sounds for hover or menu transitions (sound choices need someone to listen), shadows cast by sprites (the 2D art carries its own shading), animation frames between steps, controller rebinding and rumble, the window's position, new content, and a smaller download. Ultra's extra work is computed at load, so the web download doesn't grow.
