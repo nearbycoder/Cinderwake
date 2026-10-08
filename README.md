@@ -54,7 +54,7 @@ Every biome connects **upper galleries → surface works → undercroft** throug
   </tr>
   <tr>
     <td><a href="docs/media/combat.png"><img src="docs/media/combat.png" alt="Cinderwake combat with animated sprites, particles, and lighting" width="420"></a><br><strong>Clockwork combat</strong><br>Sprite animation, impact effects, and selective bloom.</td>
-    <td><a href="docs/media/atlas.png"><img src="docs/media/atlas.png" alt="The full-height atlas showing all three elevations and the camera footprint" width="420"></a><br><strong>Read the whole route</strong><br>The atlas maps all three elevations as you explore them (shown fully surveyed).</td>
+    <td><a href="docs/media/atlas.png"><img src="docs/media/atlas.png" alt="The full-height atlas showing all three elevations and the camera footprint" width="420"></a><br><strong>Read the whole route</strong><br>The atlas maps all three elevations as you explore them (shown fully surveyed). Each kind of object has its own mark, so a forge or sealed cache you passed is easy to find again (this image predates those marks).</td>
   </tr>
   <tr>
     <td><a href="docs/media/foundry.png"><img src="docs/media/foundry.png" alt="The Ember Foundry's industrial scenery and molten light" width="420"></a><br><strong>The Ember Foundry</strong><br>Machinery, fire, and drifting sparks.</td>

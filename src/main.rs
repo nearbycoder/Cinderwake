@@ -587,7 +587,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 37] = [
+const UI_GALLERY_NAMES: [&str; 38] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -625,6 +625,7 @@ const UI_GALLERY_NAMES: [&str; 37] = [
     "ui-34-hover-camp-route",
     "ui-35-refused-presses",
     "ui-36-forge-short-of-copper",
+    "ui-37-atlas-marks",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -956,6 +957,13 @@ fn ui_fixture(index: usize) -> Game {
             {
                 forge.pos = at;
             }
+        }
+        // Every kind of object on the atlas, with the forge short of copper
+        // and the cache still sealed, so both are drawn dimmed.
+        37 => {
+            g.map = true;
+            g.player.gold = 35;
+            g.player.kills = 3;
         }
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }

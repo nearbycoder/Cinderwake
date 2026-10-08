@@ -27,6 +27,54 @@ const RESULT_BUTTON: Rect = Rect::new(443., 572., 394., 63.);
 const CAMP_BUTTON: Rect = Rect::new(397., 531., 486., 63.);
 /// The Keeper's destination line; a click switches the route.
 const CAMP_ROUTE: Rect = Rect::new(360., 462., 600., 44.);
+
+/// Shapes the atlas and minimap draw for objects and guardians.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Mark {
+    Square,
+    Diamond,
+    Triangle,
+    Circle,
+    Ring,
+    Frame,
+}
+/// Each kind of object's mark and colour on the atlas and minimap.
+pub fn object_mark(kind: ObjectKind) -> (Mark, u32) {
+    match kind {
+        ObjectKind::Exit => (Mark::Diamond, GOLD),
+        ObjectKind::Chest => (Mark::Square, PALE),
+        ObjectKind::Scroll => (Mark::Diamond, 0xc8a8f4),
+        ObjectKind::Forge => (Mark::Triangle, 0xf2a45a),
+        ObjectKind::Secret => (Mark::Frame, 0x93d68c),
+        ObjectKind::Fountain => (Mark::Circle, 0x8bc9ef),
+        ObjectKind::Lore => (Mark::Ring, 0xb4c3bf),
+    }
+}
+const GUARDIAN_MARK: (Mark, u32) = (Mark::Circle, 0xdb927c);
+/// The atlas's legend, in order.
+const LEGEND: [(&str, Option<ObjectKind>); 8] = [
+    ("BELLGATE", Some(ObjectKind::Exit)),
+    ("RELIQUARY", Some(ObjectKind::Chest)),
+    ("MEMORY", Some(ObjectKind::Scroll)),
+    ("FORGE", Some(ObjectKind::Forge)),
+    ("CACHE", Some(ObjectKind::Secret)),
+    ("WELL", Some(ObjectKind::Fountain)),
+    ("INSCRIPTION", Some(ObjectKind::Lore)),
+    ("GUARDIAN", None),
+];
+/// Draws a mark centred on `at`; `r` is about half its width.
+fn draw_mark(mark: Mark, at: Vec2, r: f32, col: Color) {
+    match mark {
+        Mark::Square => draw_rectangle(at.x - r, at.y - r, r * 2., r * 2., col),
+        Mark::Diamond => draw_poly(at.x, at.y, 4, r * 1.3, 0., col),
+        Mark::Triangle => draw_poly(at.x, at.y + r * 0.2, 3, r * 1.4, -90., col),
+        Mark::Circle => draw_circle(at.x, at.y, r, col),
+        Mark::Ring => draw_circle_lines(at.x, at.y, r, (r * 0.45).max(1.), col),
+        Mark::Frame => {
+            draw_rectangle_lines(at.x - r, at.y - r, r * 2., r * 2., (r * 0.7).max(1.), col)
+        }
+    }
+}
 fn reliquary_card(i: usize) -> Rect {
     Rect::new(290. + i as f32 * 370., 300., 330., 280.)
 }
@@ -912,12 +960,7 @@ impl Ui {
                 self.text(name, 120., py - 3., 15., c(GOLD));
                 self.text(hint, 120., py + 14., 12., c(MUTED));
             }
-            self.center(
-                "YOU / TEAL     GATE / GOLD     RELICS / IVORY     WELLS / BLUE     GUARDIANS / CORAL",
-                532.,
-                14.,
-                c(PALE),
-            );
+            self.legend(532.);
             let (jump, down) = (
                 g.prompts().action(Action::Jump),
                 g.prompts().action(Action::Down),
@@ -1567,6 +1610,34 @@ impl Ui {
             );
         }
     }
+    /// The atlas's key: each mark drawn beside its name, in one centred row.
+    fn legend(&self, y: f32) {
+        const SIZE: f32 = 13.;
+        const GAP: f32 = 26.;
+        let entries: Vec<_> = std::iter::once(("YOU", (Mark::Circle, TEAL)))
+            .chain(
+                LEGEND
+                    .iter()
+                    .map(|(name, kind)| (*name, kind.map_or(GUARDIAN_MARK, object_mark))),
+            )
+            .collect();
+        let width = |name: &str| 16. + measure_text(name, None, SIZE as u16, 1.).width;
+        let total: f32 =
+            entries.iter().map(|(n, _)| width(n)).sum::<f32>() + GAP * (entries.len() - 1) as f32;
+        let mut x = 640. - total / 2.;
+        for (name, (mark, col)) in entries {
+            let at = vec2(x + 5., y - 5.);
+            draw_circle(at.x, at.y, 7., INK.with_alpha(0.8));
+            draw_mark(
+                mark,
+                at,
+                if mark == Mark::Diamond { 4. } else { 3.5 },
+                c(col),
+            );
+            self.text(name, x + 16., y, SIZE, c(PALE));
+            x += width(name) + GAP;
+        }
+    }
     fn map_point(g: &Game, rect: Rect, world: Vec2) -> Vec2 {
         let depth = (g.level.max_y - g.level.min_y).max(1.);
         vec2(
@@ -1654,45 +1725,38 @@ impl Ui {
                 .filter(|enemy| enemy.hp > 0. && seen(enemy.pos))
             {
                 let pos = Self::map_point(g, rect, enemy.pos - vec2(0., 14.));
-                draw_circle(pos.x, pos.y, 2.4, c(0xdb927c));
+                draw_mark(GUARDIAN_MARK.0, pos, 2.4, c(GUARDIAN_MARK.1));
             }
         }
         // The bellgate is always marked so the destination is never lost.
-        for o in g
-            .level
-            .objects
-            .iter()
-            .filter(|o| !o.used && (o.kind == ObjectKind::Exit || seen(o.pos)))
-        {
+        // Anything its prompt would dim (a forge short of copper, a sealed
+        // cache, the Regent's gate) is drawn dimmed too.
+        for (i, o) in g.level.objects.iter().enumerate() {
+            if o.used || (o.kind != ObjectKind::Exit && !seen(o.pos)) {
+                continue;
+            }
             let pos = Self::map_point(g, rect, o.pos - vec2(0., 8.));
-            let radius = if expanded { 3. } else { 1.6 };
-            match o.kind {
-                ObjectKind::Exit => {
-                    let radius = radius * 1.7;
-                    draw_rectangle(
-                        pos.x - radius,
-                        pos.y - radius,
-                        radius * 2.,
-                        radius * 2.,
-                        INK,
-                    );
-                    draw_poly(pos.x, pos.y, 4, radius, 0., c(GOLD));
-                    if expanded {
-                        self.text("GATE", pos.x - 18., pos.y - 10., 12., c(GOLD));
-                    }
+            let radius = if expanded { 3.5 } else { 1.6 };
+            let (mark, col) = object_mark(o.kind);
+            let col = c(col).with_alpha(if g.object_prompt(i).1 { 1. } else { 0.55 });
+            if o.kind == ObjectKind::Exit {
+                let radius = radius * 1.7;
+                draw_rectangle(
+                    pos.x - radius,
+                    pos.y - radius,
+                    radius * 2.,
+                    radius * 2.,
+                    INK,
+                );
+                draw_mark(mark, pos, radius / 1.3, col);
+                if expanded {
+                    self.text("GATE", pos.x - 18., pos.y - 10., 12., c(GOLD));
                 }
-                ObjectKind::Fountain => {
-                    draw_circle(pos.x, pos.y, radius, c(0x8bc9ef));
+            } else {
+                if expanded {
+                    draw_circle(pos.x, pos.y, radius + 2.5, INK.with_alpha(0.8));
                 }
-                _ => {
-                    draw_rectangle(
-                        pos.x - radius,
-                        pos.y - radius,
-                        radius * 2.,
-                        radius * 2.,
-                        c(PALE),
-                    );
-                }
+                draw_mark(mark, pos, radius, col);
             }
         }
         let player = Self::map_point(g, rect, g.player.pos - vec2(0., 12.));
@@ -1721,4 +1785,38 @@ fn title_case(name: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KINDS: [ObjectKind; 7] = [
+        ObjectKind::Chest,
+        ObjectKind::Scroll,
+        ObjectKind::Fountain,
+        ObjectKind::Forge,
+        ObjectKind::Lore,
+        ObjectKind::Exit,
+        ObjectKind::Secret,
+    ];
+
+    #[test]
+    fn every_object_kind_has_its_own_mark_and_a_legend_entry() {
+        let mut marks: Vec<_> = KINDS.iter().map(|k| object_mark(*k)).collect();
+        marks.push(GUARDIAN_MARK);
+        for (i, a) in marks.iter().enumerate() {
+            for b in &marks[i + 1..] {
+                assert!(a != b, "{a:?} is used twice");
+            }
+            // The hero's teal circle stays the hero's.
+            assert_ne!(*a, (Mark::Circle, TEAL));
+        }
+        for kind in KINDS {
+            assert!(
+                LEGEND.iter().any(|(_, k)| *k == Some(kind)),
+                "{kind:?} is missing from the legend"
+            );
+        }
+    }
 }
