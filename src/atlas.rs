@@ -152,6 +152,10 @@ impl Atlas {
             .collect();
         Self { frames, scale }
     }
+    /// Every frame's texture and silhouette.
+    pub fn textures(&self) -> impl Iterator<Item = &Texture2D> {
+        self.frames.iter().flat_map(|f| [&f.texture, &f.silhouette])
+    }
     pub fn draw_scaled(&self, frame: usize, feet: Vec2, face: f32, opacity: f32, factor: f32) {
         self.draw_pose(
             frame,

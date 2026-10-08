@@ -1218,8 +1218,18 @@ async fn main() {
     let mut audio = audio::Audio::new().await;
     let mut art = art::Art::new();
     let mut postfx = postprocess::PostProcess::new();
-    let target = render_target(1280, 720);
-    target.texture.set_filter(FilterMode::Nearest);
+    // The world is drawn into a 1280 × 720 scene, or one twice that size at
+    // Ultra, which is filtered down to the window (supersampling).
+    let scene_target = |scale: u32| {
+        let target = render_target(1280 * scale, 720 * scale);
+        target.texture.set_filter(if scale > 1 {
+            FilterMode::Linear
+        } else {
+            FilterMode::Nearest
+        });
+        target
+    };
+    let mut targets = vec![(1, scene_target(1))];
     let mut accumulator = 0.;
     // Play is drawn between the last two steps; menus, staged views, and
     // scripted captures draw whole steps, so their output doesn't change.
@@ -1565,6 +1575,21 @@ async fn main() {
                 g.settings.effects_gain()
             },
         );
+        let fidelity = if sprite_preview {
+            fidelity::Fidelity::Low
+        } else {
+            g.fidelity()
+        };
+        art.set_smooth(fidelity.smooth_textures());
+        let scale = fidelity.scene_scale();
+        if !targets.iter().any(|(s, _)| *s == scale) {
+            targets.push((scale, scene_target(scale)));
+        }
+        let target = targets
+            .iter()
+            .find(|(s, _)| *s == scale)
+            .map(|(_, t)| t.clone())
+            .expect("made above");
         art.animate(
             &g,
             if environment_tour {
@@ -1616,11 +1641,6 @@ async fn main() {
             set_camera(&camera);
             render::scene(&g, &art);
         }
-        let fidelity = if sprite_preview {
-            fidelity::Fidelity::Low
-        } else {
-            g.fidelity()
-        };
         if fidelity.post() {
             postfx.prepare(&target.texture, &g, camera_offset);
         }

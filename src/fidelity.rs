@@ -69,6 +69,20 @@ impl Fidelity {
             Self::Ultra => 16,
         }
     }
+    /// The scene target's size as a multiple of 1280 × 720. Ultra draws the
+    /// world at twice the size and filters it down: supersampling.
+    pub fn scene_scale(self) -> u32 {
+        if self == Self::Ultra {
+            2
+        } else {
+            1
+        }
+    }
+    /// Whether characters and scenery are sampled from mipmaps, so shrunken
+    /// art keeps its detail instead of dropping pixels.
+    pub fn smooth_textures(self) -> bool {
+        self == Self::Ultra
+    }
     /// Particles emitted per effect, relative to High.
     pub fn particle_density(self) -> f32 {
         match self {
@@ -87,11 +101,18 @@ impl Fidelity {
     }
     /// How many particles an effect asking for `count` emits at this step.
     /// High and Medium emit exactly `count`; any effect still emits one.
-    pub fn particles(self, count: usize) -> usize {
+    /// Smoke and dust (`veils`) never thicken past High, so denser effects
+    /// add sparks and debris without hiding guardians behind haze.
+    pub fn particles(self, count: usize, veils: bool) -> usize {
         if count == 0 {
             return 0;
         }
-        ((count as f32 * self.particle_density()).round() as usize).max(1)
+        let density = if veils {
+            self.particle_density().min(1.)
+        } else {
+            self.particle_density()
+        };
+        ((count as f32 * density).round() as usize).max(1)
     }
 }
 
@@ -125,7 +146,8 @@ mod tests {
             assert!(lower.lights() <= higher.lights());
             assert!(lower.bloom_size().0 <= higher.bloom_size().0);
             assert!(lower.particle_cap() <= higher.particle_cap());
-            assert!(lower.particles(10) <= higher.particles(10));
+            assert!(lower.particles(10, false) <= higher.particles(10, false));
+            assert!(lower.scene_scale() <= higher.scene_scale());
         }
         assert!(!Fidelity::Low.post() && Fidelity::Medium.post());
     }
@@ -133,12 +155,19 @@ mod tests {
     #[test]
     fn high_emits_exactly_as_before_and_every_effect_still_shows() {
         for count in [0, 1, 5, 13, 33] {
-            assert_eq!(Fidelity::High.particles(count), count);
-            assert_eq!(Fidelity::Medium.particles(count), count);
+            for veils in [false, true] {
+                assert_eq!(Fidelity::High.particles(count, veils), count);
+                assert_eq!(Fidelity::Medium.particles(count, veils), count);
+            }
         }
-        assert_eq!(Fidelity::Low.particles(1), 1);
-        assert_eq!(Fidelity::Low.particles(20), 10);
-        assert_eq!(Fidelity::Ultra.particles(20), 30);
+        assert_eq!(Fidelity::Low.particles(1, false), 1);
+        assert_eq!(Fidelity::Low.particles(20, true), 10);
+        assert_eq!(Fidelity::Ultra.particles(20, false), 30);
+        assert_eq!(
+            Fidelity::Ultra.particles(20, true),
+            20,
+            "smoke and dust stay as thick as at High"
+        );
         assert_eq!(
             (Fidelity::High.particle_cap(), Fidelity::High.lights()),
             (512, 8),

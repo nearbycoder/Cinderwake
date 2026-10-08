@@ -247,6 +247,18 @@ impl Environment {
             ),
         }
     }
+    /// Every texture the scenery draws from.
+    pub fn textures(&self) -> impl Iterator<Item = &Texture2D> {
+        self.backdrops
+            .iter()
+            .chain(&self.panoramas)
+            .chain([&self.rooftops, &self.undercroft])
+            .chain([
+                &self.terrain.texture,
+                &self.props.texture,
+                &self.mechanisms.texture,
+            ])
+    }
     fn depth_texture(bytes: &[u8]) -> Texture2D {
         let texture = Texture2D::from_file_with_format(bytes, None);
         texture.set_filter(FilterMode::Nearest);

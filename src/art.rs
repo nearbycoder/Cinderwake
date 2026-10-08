@@ -165,6 +165,8 @@ pub struct Art {
     generation: Option<(u64, u32, u8)>,
     dodge_trail: DodgeTrail,
     hero_opacity: f32,
+    /// Whether textures are sampled from mipmaps (Ultra).
+    smooth: bool,
     pub environment: crate::environment::Environment,
 }
 impl Art {
@@ -192,6 +194,7 @@ impl Art {
             generation: None,
             dodge_trail: DodgeTrail::default(),
             hero_opacity: 1.,
+            smooth: false,
             boss: Atlas::new(
                 include_bytes!("../assets/sprites/regent-v1.png"),
                 4,
@@ -199,6 +202,43 @@ impl Art {
                 75.,
                 0..2,
             ),
+        }
+    }
+    /// Samples characters and scenery smoothly from mipmaps (`true`), or
+    /// nearest-neighbour as they always have been. Magnified texels stay
+    /// sharp either way; only shrinking is filtered.
+    pub fn set_smooth(&mut self, smooth: bool) {
+        // Browsers' WebGL 1 can't build mipmaps for these textures, whose
+        // sizes aren't powers of two, so the browser build stays nearest.
+        let smooth = smooth && cfg!(not(target_arch = "wasm32"));
+        if self.smooth == smooth {
+            return;
+        }
+        self.smooth = smooth;
+        // SAFETY: called between frames, before anything is drawn with them.
+        let gl = unsafe { get_internal_gl() };
+        for texture in self
+            .hero
+            .textures()
+            .chain(self.foes.textures())
+            .chain(self.boss.textures())
+            .chain(self.environment.textures())
+        {
+            let id = texture.raw_miniquad_id();
+            if smooth {
+                gl.quad_context.texture_generate_mipmaps(id);
+                gl.quad_context.texture_set_min_filter(
+                    id,
+                    FilterMode::Linear,
+                    miniquad::MipmapFilterMode::Linear,
+                );
+            } else {
+                gl.quad_context.texture_set_min_filter(
+                    id,
+                    FilterMode::Nearest,
+                    miniquad::MipmapFilterMode::None,
+                );
+            }
         }
     }
     /// Forgets all animation state, as at launch, so a replayed script

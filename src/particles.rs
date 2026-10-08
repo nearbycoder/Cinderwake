@@ -100,7 +100,10 @@ impl Emitter<'_> {
         size: (f32, f32),
         upward: bool,
     ) {
-        for _ in 0..self.fidelity.particles(count) {
+        for _ in 0..self
+            .fidelity
+            .particles(count, matches!(kind, Kind::Smoke | Kind::Dust))
+        {
             let angle = if upward {
                 self.rng.range(-2.95, -0.19)
             } else {
