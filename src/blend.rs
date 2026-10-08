@@ -8,8 +8,10 @@
 //! step, and `Pose::show` places them the leftover fraction of the way to
 //! where they are now, for drawing only. `Pose::restore` puts the real
 //! positions back before the next step, so the simulation never sees a
-//! blended value.
+//! blended value. Particles and floating numbers, which come and go every
+//! step, are drawn back along their motion instead.
 use crate::game::Game;
+use crate::particles::{self, Particle};
 use crate::world;
 use macroquad::prelude::*;
 
@@ -18,13 +20,16 @@ use macroquad::prelude::*;
 const JUMP: f32 = 24.;
 
 /// Positions of everything that moves smoothly: the camera, the hero,
-/// guardians, and bolts.
+/// guardians, and bolts. The pose `show` returns also holds the particles
+/// and floating numbers as they were, for `restore`.
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct Pose {
     camera: Vec2,
     hero: Vec2,
     enemies: Vec<Vec2>,
     shots: Vec<Vec2>,
+    particles: Vec<Particle>,
+    texts: Vec<(Vec2, f32)>,
 }
 
 impl Pose {
@@ -45,8 +50,17 @@ impl Pose {
     /// Moves `g` to `alpha` (0 to 1) of the way from this recorded pose to
     /// its current one, and returns the current pose for `restore`.
     pub fn show(&self, g: &mut Game, alpha: f32) -> Self {
-        let now = Self::of(g);
+        let mut now = Self::of(g);
         let alpha = alpha.clamp(0., 1.);
+        let back = world::STEP * (1. - alpha);
+        now.particles.clone_from(&g.particles);
+        now.texts.extend(g.texts.iter().map(|t| (t.pos, t.life)));
+        particles::rewind(&mut g.particles, back);
+        for t in &mut g.texts {
+            // Floating numbers rise at a steady 22 units a second.
+            t.pos.y += 22. * back;
+            t.life += back;
+        }
         let camera = between(self.camera, now.camera, alpha);
         (g.camera, g.camera_y) = (camera.x, camera.y);
         g.player.pos = between(self.hero, now.hero, alpha);
@@ -65,7 +79,7 @@ impl Pose {
             // A bolt was fired or ended this step, so the lists no longer
             // line up; each bolt is drawn back along its flight instead.
             for s in &mut g.shots {
-                s.pos -= s.vel * world::STEP * (1. - alpha);
+                s.pos -= s.vel * back;
             }
         }
         now
@@ -79,6 +93,12 @@ impl Pose {
         }
         for (s, pos) in g.shots.iter_mut().zip(&self.shots) {
             s.pos = *pos;
+        }
+        if self.particles.len() == g.particles.len() {
+            g.particles.clone_from(&self.particles);
+        }
+        for (t, (pos, life)) in g.texts.iter_mut().zip(&self.texts) {
+            (t.pos, t.life) = (*pos, *life);
         }
     }
 }
@@ -295,11 +315,13 @@ mod tests {
     #[test]
     fn drawing_between_steps_never_changes_the_simulation() {
         // The same run, with and without blending every frame at 144 Hz,
-        // among the opening's guardians.
+        // among the opening's guardians. Particles and floating numbers are
+        // compared after every frame, since they come and go.
         let run = |blend: bool| {
             let mut g = practice(false);
             let mut pose = Pose::of(&g);
             let mut accumulator = 0.;
+            let mut effects = vec![];
             for frame in 0..(144 * 6) {
                 accumulator += 1. / 144.;
                 let input = Input {
@@ -316,17 +338,121 @@ mod tests {
                     let now = pose.show(&mut g, leftover(accumulator));
                     now.restore(&mut g);
                 }
+                let texts: Vec<_> = g.texts.iter().map(|t| (t.pos, t.life)).collect();
+                effects.push((g.particles.clone(), texts));
             }
-            g
+            (g, effects)
         };
-        let (plain, blended) = (run(false), run(true));
+        let ((plain, plain_effects), (blended, blended_effects)) = (run(false), run(true));
         assert_eq!(Pose::of(&plain), Pose::of(&blended));
+        assert!(plain_effects
+            .iter()
+            .any(|(p, t)| !p.is_empty() && !t.is_empty()));
+        assert!(
+            plain_effects == blended_effects,
+            "particles and numbers differ"
+        );
         assert!(
             plain.level.enemies.iter().any(|e| e.hp < e.max_hp),
             "guardians fought"
         );
         assert_eq!(plain.player.hp, blended.player.hp);
         assert_eq!(plain.run_time, blended.run_time);
+    }
+
+    /// Runs 0.4 s of frames at 144 Hz with the hero standing still and
+    /// returns how far `probe` moved in each frame as drawn.
+    fn drawn_steps(g: &mut Game, blend: bool, probe: impl Fn(&Game) -> Vec2) -> Vec<f32> {
+        let mut pose = Pose::of(g);
+        let mut accumulator = 0.;
+        let mut last = probe(g);
+        (0..58)
+            .map(|_| {
+                accumulator += 1. / 144.;
+                while accumulator >= world::STEP {
+                    pose.record(g);
+                    g.tick(world::STEP, Input::default());
+                    accumulator -= world::STEP;
+                }
+                let at = if blend {
+                    let now = pose.show(g, leftover(accumulator));
+                    let at = probe(g);
+                    now.restore(g);
+                    at
+                } else {
+                    probe(g)
+                };
+                let moved = at.distance(last);
+                last = at;
+                moved
+            })
+            .collect()
+    }
+    /// A practice game holding one long-lived, drifting smoke particle and
+    /// one floating number.
+    fn drifting() -> Game {
+        let mut g = practice(true);
+        let at = g.player.pos - vec2(0., 20.);
+        particles::emit(
+            &mut g.particles,
+            &mut particles::VisualRng::new(9),
+            crate::particles::Effect::Explosion,
+            at,
+            1.,
+            world::FLOOR,
+        );
+        let longest = g
+            .particles
+            .iter()
+            .filter(|p| p.kind == crate::particles::Kind::Smoke)
+            .map(|p| p.life)
+            .fold(0., f32::max);
+        g.particles.retain(|p| p.life == longest);
+        g.particles.truncate(1);
+        assert!(longest > 0.6, "the smoke outlives the measurement");
+        g.label(at, "12".into(), WHITE);
+        g
+    }
+
+    #[test]
+    fn particles_and_numbers_move_evenly_between_steps() {
+        let particle = |g: &Game| g.particles[0].pos;
+        let number = |g: &Game| g.texts[0].pos;
+        // Each frame's movement against the one before (smoke slows down
+        // gradually, so neighbouring frames should move almost the same).
+        let unevenness = |moved: Vec<f32>| {
+            moved[1..]
+                .windows(2)
+                .map(|w| (w[1] / w[0].max(1e-6) - 1.).abs())
+                .fold(0., f32::max)
+        };
+        let blended = unevenness(drawn_steps(&mut drifting(), true, particle));
+        assert!(blended < 0.1, "blended smoke strays by {blended}");
+        let stepped = unevenness(drawn_steps(&mut drifting(), false, particle));
+        assert!(stepped > 0.5, "whole-step smoke strays by only {stepped}");
+        let blended = unevenness(drawn_steps(&mut drifting(), true, number));
+        assert!(blended < 0.01, "a blended number strays by {blended}");
+        let stepped = unevenness(drawn_steps(&mut drifting(), false, number));
+        assert!(
+            stepped > 0.5,
+            "a whole-step number strays by only {stepped}"
+        );
+    }
+
+    #[test]
+    fn showing_and_restoring_leaves_particles_and_numbers_as_they_were() {
+        let mut g = drifting();
+        for _ in 0..10 {
+            g.tick(world::STEP, Input::default());
+        }
+        let pose = Pose::of(&g);
+        let (particles, number) = (g.particles.clone(), (g.texts[0].pos, g.texts[0].life));
+        let now = pose.show(&mut g, 0.3);
+        assert_ne!(g.particles, particles, "drawn back along their motion");
+        assert!(g.texts[0].pos.y > number.0.y && g.texts[0].life > number.1);
+        now.restore(&mut g);
+        assert_eq!(g.particles, particles);
+        assert_eq!((g.texts[0].pos, g.texts[0].life), number);
     }
 
     #[test]

@@ -15,7 +15,7 @@ pub enum Kind {
     Flash,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Particle {
     pub pos: Vec2,
     pub vel: Vec2,
@@ -442,6 +442,19 @@ pub fn update(particles: &mut Vec<Particle>, dt: f32) {
     particles.retain(|p| p.life > 0.);
 }
 
+/// Moves each particle `seconds` back along its motion, for drawing a frame
+/// that falls between steps. Debris is never drawn below its floor.
+pub fn rewind(particles: &mut [Particle], seconds: f32) {
+    for p in particles {
+        p.pos -= p.vel * seconds;
+        p.angle -= p.spin * seconds;
+        p.life += seconds;
+        if p.kind == Kind::Shard {
+            p.pos.y = p.pos.y.min(p.floor);
+        }
+    }
+}
+
 fn tinted(mut color: Color, alpha: f32) -> Color {
     color.a *= alpha;
     color
@@ -596,6 +609,36 @@ mod tests {
             update(&mut particles, 1. / 120.);
         }
         assert!(particles.is_empty());
+    }
+    #[test]
+    fn rewound_shards_never_sink_below_their_floor() {
+        let mut particles = Vec::new();
+        emit(
+            &mut particles,
+            &mut VisualRng::new(3),
+            Effect::Explosion,
+            vec2(100., FLOOR - 4.),
+            1.,
+            FLOOR,
+        );
+        let mut bounced = false;
+        for _ in 0..180 {
+            update(&mut particles, 1. / 120.);
+            bounced |= particles
+                .iter()
+                .any(|p| p.kind == Kind::Shard && p.bounces > 0);
+            let mut drawn = particles.clone();
+            rewind(&mut drawn, 0.9 / 120.);
+            for (p, d) in particles.iter().zip(&drawn) {
+                if p.kind == Kind::Shard {
+                    assert!(d.pos.y <= p.floor, "drawn at {} below {}", d.pos.y, p.floor);
+                }
+                if p.vel == Vec2::ZERO {
+                    assert_eq!(d.pos, p.pos, "settled debris stays put");
+                }
+            }
+        }
+        assert!(bounced, "some shards bounced");
     }
     #[test]
     fn visual_seed_is_repeatable_and_shards_never_tunnel_below_floor() {

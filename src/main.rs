@@ -1132,7 +1132,9 @@ async fn main() {
     let mut accumulator = 0.;
     // Play is drawn between the last two steps; menus, staged views, and
     // scripted captures draw whole steps, so their output doesn't change.
-    let blending = !staged && !demo && !sprite_preview;
+    // (Until round 10 the motion and vertical captures, which run at real
+    // frame times, were blended too.)
+    let blending = !staged && !demo && !sprite_preview && !automated;
     let mut pose = blend::Pose::default();
     let mut pacing = blend::Pacing::default();
     let mut pacing_warmup = 1.0_f32;
