@@ -1,4 +1,5 @@
 //! ImageGen UI sources, cropped without resampling and composed as nine-slice frames.
+use crate::ui_fade::{draw_rectangle, draw_texture_ex};
 use macroquad::prelude::*;
 
 pub struct Skin {

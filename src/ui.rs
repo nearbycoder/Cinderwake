@@ -4,10 +4,70 @@ use crate::{
     game::*,
     render::{c, INK},
     settings::{RowValue, Settings},
+    ui_fade::{
+        draw_circle, draw_circle_lines, draw_line, draw_poly, draw_rectangle, draw_rectangle_lines,
+        draw_text_ex, draw_triangle,
+    },
     ui_skin::Skin,
     world::*,
 };
 use macroquad::prelude::*;
+
+/// How far a menu has eased into place: its dimming of the world and its
+/// panel, each from 0 (not yet shown) to 1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reveal {
+    pub dim: f32,
+    pub panel: f32,
+}
+impl Reveal {
+    /// Fully in place, as staged fixtures and captures draw menus.
+    pub const SHOWN: Self = Self { dim: 1., panel: 1. };
+    /// How long a menu takes to ease in, in real seconds.
+    pub const SECONDS: f32 = 0.2;
+    /// How far below its place a panel starts, in interface units.
+    pub const RISE: f32 = 14.;
+    fn lift(self) -> f32 {
+        (1. - self.panel) * Self::RISE
+    }
+}
+/// Eases out: quick at first, settling into place.
+pub fn ease_in_place(age: f32) -> f32 {
+    let t = (age / Reveal::SECONDS).clamp(0., 1.);
+    1. - (1. - t).powi(3)
+}
+/// Times each menu from when it opened. Changing between menus restarts
+/// the panel but keeps the world dimmed; opening one from play or the title
+/// fades the dimming in too.
+#[derive(Default)]
+pub struct MenuTimer {
+    shown: Option<(Screen, bool)>,
+    age: f32,
+    dim_age: f32,
+}
+impl MenuTimer {
+    /// Advances by `dt` real seconds and says how far the menu has eased in.
+    pub fn update(&mut self, g: &Game, dt: f32) -> Reveal {
+        let now = (g.screen, g.map && g.screen == Screen::Playing);
+        if self.shown != Some(now) {
+            let over = |(screen, map): (Screen, bool)| {
+                map || !matches!(screen, Screen::Playing | Screen::Title)
+            };
+            if !self.shown.is_some_and(over) {
+                self.dim_age = 0.;
+            }
+            self.age = 0.;
+            self.shown = Some(now);
+        } else {
+            self.age += dt;
+            self.dim_age += dt;
+        }
+        Reveal {
+            dim: ease_in_place(self.dim_age),
+            panel: ease_in_place(self.age),
+        }
+    }
+}
 
 const GOLD: u32 = 0xf1d29c;
 const PALE: u32 = 0xe1e7de;
@@ -907,20 +967,31 @@ impl Ui {
             draw_rectangle(at.x - 1.5, at.y + 3., 3., 3., col);
         }
     }
-    pub fn draw(&self, g: &Game) {
+    pub fn draw(&self, g: &Game, reveal: Reveal) {
+        use crate::ui_fade::with;
+        let panel = |draw: &dyn Fn()| with(reveal.panel, reveal.lift(), draw);
         let over_title = matches!(g.screen, Screen::Options | Screen::Controls)
             && g.options_from == Screen::Title;
-        if g.screen == Screen::Title || over_title {
+        if over_title {
             self.title_screen(g);
-            if over_title {
-                draw_rectangle(0., 0., 1280., 720., INK.with_alpha(0.73));
+            with(reveal.dim, 0., || {
+                draw_rectangle(0., 0., 1280., 720., INK.with_alpha(0.73))
+            });
+            panel(&|| {
                 if g.screen == Screen::Controls {
                     self.controls(g);
                 } else {
                     self.options(g);
                 }
-            }
-            self.hover(g);
+                self.hover(g);
+            });
+            return;
+        }
+        if g.screen == Screen::Title {
+            panel(&|| {
+                self.title_screen(g);
+                self.hover(g);
+            });
             return;
         }
         self.low_vitality(g);
@@ -976,63 +1047,10 @@ impl Ui {
             self.notice(g, 620., PALE, true);
         }
         if g.map && g.screen == Screen::Playing {
-            draw_rectangle(0., 103., 1280., 530., INK.with_alpha(0.67));
-            self.skin.panel(Rect::new(88., 108., 1104., 524.));
-            self.heading("Atlas of the dying city", 640., 160., 37.);
-            self.center(
-                &format!(
-                    "{}  /  {}  /  SEED {}{}",
-                    crate::environment::zone_name(g.level.biome, g.camera, g.level.width),
-                    Level::tier_name(g.player.pos.y),
-                    g.level.seed,
-                    if g.practice {
-                        String::new()
-                    } else {
-                        format!("  /  {:.0}% SURVEYED", g.survey.fraction() * 100.)
-                    }
-                ),
-                188.,
-                15.,
-                c(MUTED),
-            );
-            let map_rect = Rect::new(258., 218., 890., 282.);
-            self.minimap(g, map_rect);
-            for (y, name, hint) in [
-                (Level::UPPER, "UPPER", "GALLERIES"),
-                (FLOOR, "SURFACE", "WORKS"),
-                (Level::LOWER, "UNDERCROFT", "DEEP ROUTE"),
-            ] {
-                let py = Self::map_point(g, map_rect, vec2(0., y)).y;
-                self.text(name, 120., py - 3., 15., c(GOLD));
-                self.text(hint, 120., py + 14., 12., c(MUTED));
-            }
-            self.legend(532.);
-            let (jump, down) = (
-                g.prompts().action(Action::Jump),
-                g.prompts().action(Action::Down),
-            );
-            self.center(
-                &format!("{jump} to climb stairways; press again to double jump  /  {down} + {jump} to drop  /  {down} in the air to slam"),
-                563.,
-                16.,
-                c(PALE),
-            );
-            self.center(
-                if g.practice {
-                    "The outlined window tracks your view. All routes are shown; gaps connect the city's tiers."
-                } else {
-                    "The outlined window tracks your view. Unseen stretches stay dark; the bellgate is always marked."
-                },
-                586.,
-                14.,
-                c(MUTED),
-            );
-            self.center(
-                &format!("{}   Return to the descent", g.prompts().menu(Menu::Atlas)),
-                612.,
-                17.,
-                c(TEAL),
-            );
+            with(reveal.dim, 0., || {
+                draw_rectangle(0., 103., 1280., 530., INK.with_alpha(0.67))
+            });
+            panel(&|| self.atlas(g));
         }
         if matches!(
             g.screen,
@@ -1045,8 +1063,10 @@ impl Ui {
                 | Screen::Options
                 | Screen::Controls
         ) {
-            draw_rectangle(0., 0., 1280., 720., INK.with_alpha(0.73));
-            match g.screen {
+            with(reveal.dim, 0., || {
+                draw_rectangle(0., 0., 1280., 720., INK.with_alpha(0.73))
+            });
+            panel(&|| match g.screen {
                 Screen::Paused => self.paused(g),
                 Screen::Scroll => self.disciplines(g),
                 Screen::Reliquary => self.reliquary(g),
@@ -1055,9 +1075,9 @@ impl Ui {
                 Screen::Options => self.options(g),
                 Screen::Controls => self.controls(g),
                 _ => {}
-            }
+            });
         }
-        self.hover(g);
+        panel(&|| self.hover(g));
         if let Some(e) = &g.save_error {
             self.text(&format!("SAVE FAILED: {e}"), 20., 632., 13., RED);
         }
@@ -1070,6 +1090,65 @@ impl Ui {
                 c(MUTED),
             );
         }
+    }
+    /// The atlas's panel: the map, its tiers, legend, and help.
+    fn atlas(&self, g: &Game) {
+        self.skin.panel(Rect::new(88., 108., 1104., 524.));
+        self.heading("Atlas of the dying city", 640., 160., 37.);
+        self.center(
+            &format!(
+                "{}  /  {}  /  SEED {}{}",
+                crate::environment::zone_name(g.level.biome, g.camera, g.level.width),
+                Level::tier_name(g.player.pos.y),
+                g.level.seed,
+                if g.practice {
+                    String::new()
+                } else {
+                    format!("  /  {:.0}% SURVEYED", g.survey.fraction() * 100.)
+                }
+            ),
+            188.,
+            15.,
+            c(MUTED),
+        );
+        let map_rect = Rect::new(258., 218., 890., 282.);
+        self.minimap(g, map_rect);
+        for (y, name, hint) in [
+            (Level::UPPER, "UPPER", "GALLERIES"),
+            (FLOOR, "SURFACE", "WORKS"),
+            (Level::LOWER, "UNDERCROFT", "DEEP ROUTE"),
+        ] {
+            let py = Self::map_point(g, map_rect, vec2(0., y)).y;
+            self.text(name, 120., py - 3., 15., c(GOLD));
+            self.text(hint, 120., py + 14., 12., c(MUTED));
+        }
+        self.legend(532.);
+        let (jump, down) = (
+            g.prompts().action(Action::Jump),
+            g.prompts().action(Action::Down),
+        );
+        self.center(
+            &format!("{jump} to climb stairways; press again to double jump  /  {down} + {jump} to drop  /  {down} in the air to slam"),
+            563.,
+            16.,
+            c(PALE),
+        );
+        self.center(
+            if g.practice {
+                "The outlined window tracks your view. All routes are shown; gaps connect the city's tiers."
+            } else {
+                "The outlined window tracks your view. Unseen stretches stay dark; the bellgate is always marked."
+            },
+            586.,
+            14.,
+            c(MUTED),
+        );
+        self.center(
+            &format!("{}   Return to the descent", g.prompts().menu(Menu::Atlas)),
+            612.,
+            17.,
+            c(TEAL),
+        );
     }
     fn paused(&self, g: &Game) {
         self.modal(
@@ -1099,7 +1178,7 @@ impl Ui {
                 "Arc snare",
             ),
             (k(Action::Interact), "Interact", k(Action::Heal), "Heal"),
-            (k(Action::Down), "Aerial slam", "F9".into(), "Lighting"),
+            (k(Action::Down), "Aerial slam", "F9".into(), "Fidelity"),
             (
                 format!("{}+{}", k(Action::Down), k(Action::Jump)),
                 "Drop through",
@@ -1854,6 +1933,53 @@ fn title_case(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn menus_ease_into_place_quickly_and_settle() {
+        assert_eq!(ease_in_place(0.), 0.);
+        assert_eq!(ease_in_place(Reveal::SECONDS), 1.);
+        assert_eq!(ease_in_place(5.), 1.);
+        let mut last = 0.;
+        for i in 1..=20 {
+            let now = ease_in_place(Reveal::SECONDS * i as f32 / 20.);
+            assert!(now > last, "always moving toward its place");
+            last = now;
+        }
+        assert!(
+            ease_in_place(Reveal::SECONDS / 2.) > 0.8,
+            "most of the way by halfway"
+        );
+        assert_eq!(Reveal::SHOWN.lift(), 0.);
+        assert_eq!(Reveal { dim: 0., panel: 0. }.lift(), Reveal::RISE);
+    }
+
+    #[test]
+    fn each_menu_restarts_its_panel_and_the_dimming_fades_in_only_from_play() {
+        let mut g = Game::new(4017, crate::save::Save::default());
+        g.screen = Screen::Playing;
+        let mut timer = MenuTimer::default();
+        let step = |timer: &mut MenuTimer, g: &Game, dt: f32| timer.update(g, dt);
+        step(&mut timer, &g, 0.016);
+        step(&mut timer, &g, 1.);
+        g.screen = Screen::Paused;
+        assert_eq!(step(&mut timer, &g, 0.016), Reveal { dim: 0., panel: 0. });
+        let settled = step(&mut timer, &g, 0.5);
+        assert_eq!(settled, Reveal::SHOWN);
+        g.screen = Screen::Options;
+        let moved = step(&mut timer, &g, 0.016);
+        assert_eq!(
+            (moved.dim, moved.panel),
+            (1., 0.),
+            "from pause the world stays dimmed and only the panel eases in"
+        );
+        // Opening the atlas in play fades its dimming in too.
+        g.screen = Screen::Playing;
+        step(&mut timer, &g, 0.016);
+        g.map = true;
+        assert_eq!(step(&mut timer, &g, 0.016).dim, 0.);
+        let partway = step(&mut timer, &g, Reveal::SECONDS / 4.);
+        assert!(partway.dim > 0. && partway.dim < 1.);
+    }
 
     const KINDS: [ObjectKind; 7] = [
         ObjectKind::Chest,

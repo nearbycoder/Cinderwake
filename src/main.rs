@@ -20,6 +20,7 @@ mod settings;
 mod storage;
 mod traversal_capture;
 mod ui;
+mod ui_fade;
 mod ui_skin;
 mod world;
 use game::*;
@@ -601,7 +602,7 @@ fn camera_shake(g: &Game) -> Vec2 {
     vec2((g.time * 93.).sin(), (g.time * 79.).cos()) * g.shake * 0.35 * g.settings.shake_scale()
 }
 
-const UI_GALLERY_NAMES: [&str; 42] = [
+const UI_GALLERY_NAMES: [&str; 43] = [
     "ui-00-title",
     "ui-01-playing",
     "ui-02-low-health-cooldowns-hammer",
@@ -644,6 +645,7 @@ const UI_GALLERY_NAMES: [&str; 42] = [
     "ui-39-flask-drinking",
     "ui-40-flask-interrupted",
     "ui-41-options-fidelity",
+    "ui-42-pause-easing-in",
 ];
 
 // These are frozen visual fixtures for inspecting the interface, not a playthrough.
@@ -1018,6 +1020,7 @@ fn ui_fixture(index: usize) -> Game {
             g.settings.set_fidelity(fidelity::Fidelity::Ultra);
             g.pointer = Some(vec2(847., 367.));
         }
+        42 => g.screen = Screen::Paused,
         _ => unreachable!("UI gallery fixture index exceeds its capture list"),
     }
     g
@@ -1267,6 +1270,7 @@ async fn main() {
     let mut arrival = 0.0_f32;
     let mut render_times = Vec::new();
     let mut bench = bench::Bench::default();
+    let mut menu_timer = ui::MenuTimer::default();
     loop {
         if fidelity_bench {
             #[cfg(not(target_arch = "wasm32"))]
@@ -1664,8 +1668,21 @@ async fn main() {
             ..Camera2D::from_display_rect(Rect::new(0., 0., 1280., 720.))
         };
         set_camera(&ui_cam);
+        // Menus ease in over real time; staged views and captures draw them
+        // in place.
+        let reveal = if ui_gallery && UI_GALLERY_NAMES[frame as usize] == "ui-42-pause-easing-in" {
+            // The pause screen caught partway into place.
+            ui::Reveal {
+                dim: ui::ease_in_place(ui::Reveal::SECONDS * 0.3),
+                panel: ui::ease_in_place(ui::Reveal::SECONDS * 0.3),
+            }
+        } else if staged || automated {
+            ui::Reveal::SHOWN
+        } else {
+            menu_timer.update(&g, get_frame_time())
+        };
         if !sprite_preview || ui_gallery {
-            ui.draw(&g);
+            ui.draw(&g, reveal);
         }
         if let Some(now) = shown {
             now.restore(&mut g);
