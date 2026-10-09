@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cinderwake — A Clockwork Roguelite</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d16; }
+    canvas { display: block; width: 100%; height: 100%; outline: none; }
+    #loading {
+      position: fixed; inset: 0; display: grid; place-content: center; gap: 12px;
+      color: #f2d7a2; font: 18px Georgia, serif; text-align: center; pointer-events: none;
+    }
+    #loading small { color: #a1c6c4; font: 13px monospace; }
+    #loading .bar {
+      width: min(320px, 70vw); height: 6px; margin: 4px auto 0;
+      border: 1px solid #6b5a3e; background: #151827;
+    }
+    #loading .bar div { width: 0; height: 100%; background: #d6ae67; }
+    #loading.failed { pointer-events: auto; color: #f0a48a; }
+    #loading.failed .bar { display: none; }
+    #loading.failed small { color: #f2d7a2; font: 15px Georgia, serif; max-width: 34em; line-height: 1.4; }
+    #stopped {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+      padding: 12px 18px; border: 1px solid #6b5a3e; background: #0b0d16e6;
+      color: #f2d7a2; font: 16px Georgia, serif; text-align: center;
+    }
+    #stopped small { display: block; margin-top: 4px; color: #a1c6c4; font: 13px Georgia, serif; }
+  </style>
+</head>
+<body>
+  <canvas id="glcanvas" tabindex="1"></canvas>
+  <div id="loading" role="status">
+    <span id="loading-title">Kindling the city…</span>
+    <div class="bar"><div id="loading-fill"></div></div>
+    <small id="loading-detail">about 53 MB · keyboard, mouse, or controller</small>
+  </div>
+  <!-- The bundle's unused quad_net plugin assigns this undeclared global in strict mode. -->
+  <script>var register_plugin;</script>
+  <script src="mq_js_bundle.js"></script>
+  <script src="cinderwake-storage.js"></script>
+  <script src="cinderwake-pad.js"></script>
+  <script>
+    // Miniquad's loader keeps Space, the arrows, Tab, and F1–F10 from reaching
+    // the browser, but not F11, which would then toggle the browser's own
+    // fullscreen as well as the game's. The game handles F11 itself.
+    document.getElementById("glcanvas").addEventListener("keydown", (e) => {
+      if (e.code === "F11") e.preventDefault();
+    });
+    // The loader calls these without handling a refusal, which then shows as
+    // an uncaught error. The game notices a refusal itself and says so, so
+    // these note it quietly. They call the browser's own functions each time.
+    const quietly = (name) => (error) => console.info(`${name} was refused: ${error && error.message}`);
+    document.getElementById("glcanvas").requestFullscreen = function (...args) {
+      const asked = HTMLCanvasElement.prototype.requestFullscreen.apply(this, args);
+      return asked && asked.catch ? asked.catch(quietly("Fullscreen")) : asked;
+    };
+    document.exitFullscreen = function (...args) {
+      const asked = Document.prototype.exitFullscreen.apply(this, args);
+      return asked && asked.catch ? asked.catch(quietly("Leaving fullscreen")) : asked;
+    };
+  </script>
+  <script>
+    // The page downloads the game itself, to show progress, and hands the
+    // loader the finished file. The loader only logs its own failures, so
+    // the page watches for them too and says what went wrong.
+    const loading = document.getElementById("loading");
+    const say = (title, detail) => {
+      document.getElementById("loading-title").textContent = title;
+      document.getElementById("loading-detail").textContent = detail;
+    };
+    // The page's state, for scripts/check-pages.mjs: loading, running,
+    // failed, or stopped.
+    const state = (name) => { document.documentElement.dataset.game = name; };
+    state("loading");
+    let failed = false;
+    const fail = (title, detail) => {
+      if (failed) return;
+      failed = true;
+      state("failed");
+      loading.classList.add("failed");
+      loading.setAttribute("role", "alert");
+      say(title, detail);
+    };
+    const megabytes = (bytes) => (bytes / 1e6).toFixed(1);
+    function webglAvailable() {
+      const probe = document.createElement("canvas");
+      const gl = probe.getContext("webgl2") || probe.getContext("webgl");
+      if (gl) gl.getExtension("WEBGL_lose_context")?.loseContext();
+      return !!gl;
+    }
+    // A failed compile or start reaches only the loader's own catch.
+    const watched = {};
+    for (const name of ["compileStreaming", "instantiate"]) {
+      const real = WebAssembly[name];
+      if (typeof real !== "function") continue;
+      watched[name] = real;
+      WebAssembly[name] = function (...args) {
+        return real.apply(this, args).catch((error) => {
+          fail("Cinderwake couldn't start in this browser.",
+            `${error && error.message ? error.message + ". " : ""}Reload the page to try again, or try a current Chrome, Edge, or Firefox.`);
+          throw error;
+        });
+      };
+    }
+    // Once running, a WebAssembly error (a crash in the game) stops it.
+    window.addEventListener("error", (event) => {
+      if (!(event.error instanceof WebAssembly.RuntimeError)) return;
+      if (document.getElementById("stopped")) return;
+      state("stopped");
+      loading.remove();
+      const note = document.createElement("div");
+      note.id = "stopped";
+      note.setAttribute("role", "alert");
+      note.innerHTML = "Cinderwake stopped unexpectedly.<small>Reload the page to continue. Progress, options, and the last checkpoint of a run are kept in this browser.</small>";
+      document.body.append(note);
+    });
+    async function fetched(path, options) {
+      let response;
+      try {
+        response = await fetch(path, options);
+      } catch (error) {
+        throw new Error("The game couldn't be downloaded. Check the connection, then reload the page.");
+      }
+      if (!response.ok) {
+        throw new Error(`The game couldn't be downloaded (the server answered ${response.status} ${response.statusText}). Reload the page to try again.`);
+      }
+      return response;
+    }
+    // The game arrives as a few parts (see scripts/build-web.sh), fetched
+    // together. The list skips the cache, so after an update the page never
+    // joins a cached part of the old game to a new one.
+    async function download() {
+      let files;
+      try {
+        files = await (await fetched("game-files.json", { cache: "no-cache" })).json();
+      } catch (error) {
+        throw new Error(error.message.startsWith("The game") ? error.message
+          : "The game's file list couldn't be read. Reload the page to try again.");
+      }
+      const fill = document.getElementById("loading-fill");
+      const counts = files.parts.map(() => 0);
+      // One part failing stops the others.
+      const stop = new AbortController();
+      const show = () => {
+        if (stop.signal.aborted) return;
+        const received = counts.reduce((a, b) => a + b, 0);
+        fill.style.width = `${Math.min(100, (100 * received) / files.bytes)}%`;
+        say("Kindling the city…", `${megabytes(received)} of ${megabytes(files.bytes)} MB`);
+      };
+      show();
+      const parts = await Promise.all(files.parts.map(async (path, i) => {
+        const response = await fetched(path, { signal: stop.signal });
+        const chunks = [];
+        try {
+          const reader = response.body.getReader();
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            counts[i] += value.length;
+            show();
+          }
+        } catch (error) {
+          throw new Error(`The download stopped after ${megabytes(counts.reduce((a, b) => a + b, 0))} MB. Check the connection, then reload the page.`);
+        }
+        return new Blob(chunks);
+      })).catch((error) => {
+        stop.abort();
+        throw error;
+      });
+      const file = new Blob(parts, { type: "application/wasm" });
+      if (file.size !== files.bytes) {
+        throw new Error(`The download was incomplete (${megabytes(file.size)} of ${megabytes(files.bytes)} MB). Reload the page to try again.`);
+      }
+      return file;
+    }
+    (async () => {
+      if (!webglAvailable()) {
+        fail("This browser couldn't start WebGL, which Cinderwake draws with.",
+          "Turn on hardware acceleration in the browser's settings, or try another browser.");
+        return;
+      }
+      let file;
+      try {
+        file = await download();
+      } catch (error) {
+        fail("Cinderwake couldn't be loaded.", error.message);
+        return;
+      }
+      say("Preparing the city…", "decoding art and sound");
+      // The game says when it has drawn its first frame, once the embedded
+      // art and sound are decoded, which can take a few seconds.
+      window.addEventListener("cinderwake-ready", () => {
+        Object.assign(WebAssembly, watched);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (failed || document.documentElement.dataset.game !== "loading") return;
+          loading.remove();
+          // Keys reach the game without a click first.
+          document.getElementById("glcanvas").focus();
+          state("running");
+        }));
+      }, { once: true });
+      load(URL.createObjectURL(file));
+    })();
+  </script>
+</body>
+</html>
