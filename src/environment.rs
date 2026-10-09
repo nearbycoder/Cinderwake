@@ -2,6 +2,7 @@
 //! space. Surface anchors keep visual platform tops aligned with physics colliders.
 use crate::world::{Biome, Level, Object, ObjectKind, FLOOR};
 use macroquad::prelude::*;
+use std::cell::RefCell;
 
 /// The height of the dressing stood on the `i`th platform.
 fn dressing_height(i: usize) -> f32 {
@@ -199,9 +200,66 @@ impl Sheet {
         }
     }
 }
+/// Each biome's opening backdrop and wider panorama, decoded when first
+/// drawn. The browser build keeps only the biome on screen and lets the others
+/// go, about 38 MB of textures a phone shouldn't have to hold; the desktop
+/// decodes all four at launch, as it always has.
+struct Vistas {
+    loaded: RefCell<[Option<(Texture2D, Texture2D)>; 4]>,
+}
+const KEEP_ONE_VISTA: bool = cfg!(target_arch = "wasm32");
+const BACKDROPS: [&[u8]; 4] = [
+    include_bytes!("../assets/environment/aqueduct-v1.png"),
+    include_bytes!("../assets/environment/garden-v1.png"),
+    include_bytes!("../assets/environment/foundry-v1.png"),
+    include_bytes!("../assets/environment/crown-v1.png"),
+];
+const PANORAMAS: [&[u8]; 4] = [
+    include_bytes!("../assets/environment/aqueduct-panorama-v1.png"),
+    include_bytes!("../assets/environment/garden-panorama-v1.png"),
+    include_bytes!("../assets/environment/foundry-panorama-v1.png"),
+    include_bytes!("../assets/environment/crown-panorama-v1.png"),
+];
+impl Vistas {
+    fn new() -> Self {
+        let vistas = Self {
+            loaded: RefCell::new([None, None, None, None]),
+        };
+        // The title stands in the Aqueduct, so its vista is ready at once.
+        let preload = if KEEP_ONE_VISTA { 1 } else { 4 };
+        for index in 0..preload {
+            vistas.get(index);
+        }
+        vistas
+    }
+    /// The backdrop and panorama of biome `index`, decoding them if needed.
+    fn get(&self, index: usize) -> (Texture2D, Texture2D) {
+        let mut loaded = self.loaded.borrow_mut();
+        if loaded[index].is_none() {
+            if KEEP_ONE_VISTA {
+                loaded.iter_mut().for_each(|slot| *slot = None);
+            }
+            let decode = |bytes| {
+                let t = Texture2D::from_file_with_format(bytes, None);
+                t.set_filter(FilterMode::Nearest);
+                t
+            };
+            loaded[index] = Some((decode(BACKDROPS[index]), decode(PANORAMAS[index])));
+        }
+        loaded[index].clone().expect("decoded above")
+    }
+    /// The vistas decoded so far.
+    fn textures(&self) -> Vec<Texture2D> {
+        let loaded = self.loaded.borrow();
+        loaded
+            .iter()
+            .flatten()
+            .flat_map(|(backdrop, panorama)| [backdrop.clone(), panorama.clone()])
+            .collect()
+    }
+}
 pub struct Environment {
-    backdrops: Vec<Texture2D>,
-    panoramas: Vec<Texture2D>,
+    vistas: Vistas,
     rooftops: Texture2D,
     undercroft: Texture2D,
     terrain: Sheet,
@@ -210,36 +268,8 @@ pub struct Environment {
 }
 impl Environment {
     pub fn new() -> Self {
-        let files: [&[u8]; 4] = [
-            include_bytes!("../assets/environment/aqueduct-v1.png"),
-            include_bytes!("../assets/environment/garden-v1.png"),
-            include_bytes!("../assets/environment/foundry-v1.png"),
-            include_bytes!("../assets/environment/crown-v1.png"),
-        ];
-        let backdrops = files
-            .into_iter()
-            .map(|bytes| {
-                let t = Texture2D::from_file_with_format(bytes, None);
-                t.set_filter(FilterMode::Nearest);
-                t
-            })
-            .collect();
-        let panoramas = [
-            include_bytes!("../assets/environment/aqueduct-panorama-v1.png").as_slice(),
-            include_bytes!("../assets/environment/garden-panorama-v1.png").as_slice(),
-            include_bytes!("../assets/environment/foundry-panorama-v1.png").as_slice(),
-            include_bytes!("../assets/environment/crown-panorama-v1.png").as_slice(),
-        ]
-        .into_iter()
-        .map(|bytes| {
-            let t = Texture2D::from_file_with_format(bytes, None);
-            t.set_filter(FilterMode::Nearest);
-            t
-        })
-        .collect();
         Self {
-            backdrops,
-            panoramas,
+            vistas: Vistas::new(),
             rooftops: Self::depth_texture(include_bytes!(
                 "../assets/environment/rooftops-depth-v1.png"
             )),
@@ -273,17 +303,17 @@ impl Environment {
             ),
         }
     }
-    /// Every texture the scenery draws from.
-    pub fn textures(&self) -> impl Iterator<Item = &Texture2D> {
-        self.backdrops
-            .iter()
-            .chain(&self.panoramas)
-            .chain([&self.rooftops, &self.undercroft])
-            .chain([
-                &self.terrain.texture,
-                &self.props.texture,
-                &self.mechanisms.texture,
-            ])
+    /// Every texture the scenery draws from (of the vistas, those decoded).
+    pub fn textures(&self) -> Vec<Texture2D> {
+        let mut textures = self.vistas.textures();
+        textures.extend([
+            self.rooftops.clone(),
+            self.undercroft.clone(),
+            self.terrain.texture.clone(),
+            self.props.texture.clone(),
+            self.mechanisms.texture.clone(),
+        ]);
+        textures
     }
     fn depth_texture(bytes: &[u8]) -> Texture2D {
         let texture = Texture2D::from_file_with_format(bytes, None);
@@ -301,7 +331,8 @@ impl Environment {
     pub fn background(&self, biome: Biome, cam: f32, width: f32, time: f32, cam_y: f32) {
         clear_background(Color::from_hex(0x0c1522));
         let index = Self::index(biome);
-        let texture = &self.backdrops[index];
+        let (texture, panorama) = self.vistas.get(index);
+        let texture = &texture;
         let crop_h = (texture.width() * 9. / 16.).min(texture.height());
         let crop = Rect::new(
             0.,
@@ -323,7 +354,7 @@ impl Environment {
                 ..Default::default()
             },
         );
-        let panorama = &self.panoramas[index];
+        let panorama = &panorama;
         let pano_h = 400.;
         let pano_w = (panorama.width() / panorama.height() * pano_h).max(800.);
         draw_texture_ex(

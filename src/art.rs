@@ -220,12 +220,13 @@ impl Art {
         self.smooth = smooth;
         // SAFETY: called between frames, before anything is drawn with them.
         let gl = unsafe { get_internal_gl() };
+        let scenery = self.environment.textures();
         for texture in self
             .hero
             .textures()
             .chain(self.foes.textures())
             .chain(self.boss.textures())
-            .chain(self.environment.textures())
+            .chain(&scenery)
         {
             let id = texture.raw_miniquad_id();
             if smooth {
