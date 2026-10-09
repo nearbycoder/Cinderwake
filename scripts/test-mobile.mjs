@@ -440,14 +440,17 @@ async function drive(page, context, profile, { log, result, shot, controls, fps,
   result(ran.seen.includes("attack"), "the strike button strikes while the stick is held");
   // A random run can leave play (a pickup's choice, or a fall into
   // guardians); then the session carries on from a fixed practice start.
+  const practice = async () => {
+    await page.goto(`${url}${url.includes("?") ? "&" : "?"}start=well`);
+    for (let i = 0; i < 240 && (await game(page).catch(() => null))?.mode !== "play"; i++) await pause(500);
+    await pause(1500);
+  };
   const keepPlaying = async () => {
     const now = await game(page);
     if (now.mode === "play") return;
     log(`the run left play (mode "${now.mode}"); continuing from the practice start ?start=well`);
     await shot("left-play");
-    await page.goto(`${url}${url.includes("?") ? "&" : "?"}start=well`);
-    for (let i = 0; i < 240 && (await game(page).catch(() => null))?.mode !== "play"; i++) await pause(500);
-    await pause(1500);
+    await practice();
   };
   // Each remaining verb once; the page records what reached the game.
   for (const [id, verb] of [["dodge", "dodge"], ["parry", "parry"], ["bolt", "bow"], ["vessel", "grenade"],
@@ -466,7 +469,10 @@ async function drive(page, context, profile, { log, result, shot, controls, fps,
   const down = await game(page);
   await finger.up("#touch-stick");
   result(down.seen.includes("down"), "pushing the stick down reaches the game as down (drop, slam, look below)");
-  await keepPlaying();
+  // The atlas doesn't stop the world, so the rest happens at the practice
+  // start, where no guardian is near (a random run's can end it meanwhile).
+  log("continuing from the practice start ?start=well for the atlas and pause");
+  await practice();
   await finger.tap("#touch-map");
   await pause(500);
   await shot("5-atlas");

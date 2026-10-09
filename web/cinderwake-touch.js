@@ -137,7 +137,7 @@
     const rotate = document.createElement("div");
     rotate.id = "rotate";
     rotate.setAttribute("role", "alert");
-    rotate.innerHTML = "<b></b>Turn your device sideways<small>Cinderwake plays in landscape.<br>The run is paused until then.</small>";
+    rotate.innerHTML = "<b></b>Turn your device sideways<small>Cinderwake plays in landscape.<br>A run in progress waits until then.</small>";
     document.body.append(root, rotate);
     for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
       root.addEventListener(type, onTouch, { passive: false });
