@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cinderwake — A Clockwork Roguelite</title>
+  <link rel="icon" type="image/png" href="favicon.png">
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d16; }
     canvas { display: block; width: 100%; height: 100%; outline: none; }
@@ -33,7 +34,7 @@
   <div id="loading" role="status">
     <span id="loading-title">Kindling the city…</span>
     <div class="bar"><div id="loading-fill"></div></div>
-    <small id="loading-detail">about 52 MB · keyboard, mouse, or controller</small>
+    <small id="loading-detail">about 53 MB · keyboard, mouse, or controller</small>
   </div>
   <!-- The bundle's unused quad_net plugin assigns this undeclared global in strict mode. -->
   <script>var register_plugin;</script>
@@ -69,10 +70,15 @@
       document.getElementById("loading-title").textContent = title;
       document.getElementById("loading-detail").textContent = detail;
     };
+    // The page's state, for scripts/check-pages.mjs: loading, running,
+    // failed, or stopped.
+    const state = (name) => { document.documentElement.dataset.game = name; };
+    state("loading");
     let failed = false;
     const fail = (title, detail) => {
       if (failed) return;
       failed = true;
+      state("failed");
       loading.classList.add("failed");
       loading.setAttribute("role", "alert");
       say(title, detail);
@@ -102,45 +108,72 @@
     window.addEventListener("error", (event) => {
       if (!(event.error instanceof WebAssembly.RuntimeError)) return;
       if (document.getElementById("stopped")) return;
+      state("stopped");
       const note = document.createElement("div");
       note.id = "stopped";
       note.setAttribute("role", "alert");
       note.innerHTML = "Cinderwake stopped unexpectedly.<small>Reload the page to continue. Progress, options, and the last checkpoint of a run are kept in this browser.</small>";
       document.body.append(note);
     });
-    async function download(path) {
+    async function fetched(path, options) {
       let response;
       try {
-        response = await fetch(path);
+        response = await fetch(path, options);
       } catch (error) {
         throw new Error("The game couldn't be downloaded. Check the connection, then reload the page.");
       }
       if (!response.ok) {
         throw new Error(`The game couldn't be downloaded (the server answered ${response.status} ${response.statusText}). Reload the page to try again.`);
       }
-      // A server that compresses the file reports the compressed size, so
-      // the bar follows it only while the count stays below it.
-      const total = Number(response.headers.get("Content-Length")) || 0;
-      const fill = document.getElementById("loading-fill");
-      const parts = [];
-      let received = 0;
+      return response;
+    }
+    // The game arrives as a few parts (see scripts/build-web.sh), fetched
+    // together. The list skips the cache, so after an update the page never
+    // joins a cached part of the old game to a new one.
+    async function download() {
+      let files;
       try {
-        const reader = response.body.getReader();
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          parts.push(value);
-          received += value.length;
-          const known = total > 0 && received <= total;
-          fill.style.width = known ? `${(100 * received) / total}%` : "100%";
-          say("Kindling the city…", known
-            ? `${megabytes(received)} of ${megabytes(total)} MB`
-            : `${megabytes(received)} MB`);
-        }
+        files = await (await fetched("game-files.json", { cache: "no-cache" })).json();
       } catch (error) {
-        throw new Error(`The download stopped after ${megabytes(received)} MB. Check the connection, then reload the page.`);
+        throw new Error(error.message.startsWith("The game") ? error.message
+          : "The game's file list couldn't be read. Reload the page to try again.");
       }
-      return new Blob(parts, { type: "application/wasm" });
+      const fill = document.getElementById("loading-fill");
+      const counts = files.parts.map(() => 0);
+      // One part failing stops the others.
+      const stop = new AbortController();
+      const show = () => {
+        if (stop.signal.aborted) return;
+        const received = counts.reduce((a, b) => a + b, 0);
+        fill.style.width = `${Math.min(100, (100 * received) / files.bytes)}%`;
+        say("Kindling the city…", `${megabytes(received)} of ${megabytes(files.bytes)} MB`);
+      };
+      show();
+      const parts = await Promise.all(files.parts.map(async (path, i) => {
+        const response = await fetched(path, { signal: stop.signal });
+        const chunks = [];
+        try {
+          const reader = response.body.getReader();
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            counts[i] += value.length;
+            show();
+          }
+        } catch (error) {
+          throw new Error(`The download stopped after ${megabytes(counts.reduce((a, b) => a + b, 0))} MB. Check the connection, then reload the page.`);
+        }
+        return new Blob(chunks);
+      })).catch((error) => {
+        stop.abort();
+        throw error;
+      });
+      const file = new Blob(parts, { type: "application/wasm" });
+      if (file.size !== files.bytes) {
+        throw new Error(`The download was incomplete (${megabytes(file.size)} of ${megabytes(files.bytes)} MB). Reload the page to try again.`);
+      }
+      return file;
     }
     (async () => {
       if (!webglAvailable()) {
@@ -150,7 +183,7 @@
       }
       let file;
       try {
-        file = await download("cinderwake.wasm");
+        file = await download();
       } catch (error) {
         fail("Cinderwake couldn't be loaded.", error.message);
         return;
@@ -162,7 +195,12 @@
         if (failed) return;
         if (typeof wasm_exports !== "undefined" && wasm_exports) {
           Object.assign(WebAssembly, watched);
-          requestAnimationFrame(() => requestAnimationFrame(() => loading.remove()));
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            loading.remove();
+            // Keys reach the game without a click first.
+            document.getElementById("glcanvas").focus();
+            if (document.documentElement.dataset.game === "loading") state("running");
+          }));
         } else {
           setTimeout(hide, 100);
         }
