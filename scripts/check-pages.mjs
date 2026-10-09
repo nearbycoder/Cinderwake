@@ -144,7 +144,15 @@ async function check(url, { timeout, settle, screenshot }) {
         handlers[message.method](message.params);
       }
     };
+    // Chromium closing (or crashing) fails whatever is still waiting.
+    let closed = false;
+    socket.onclose = () => {
+      closed = true;
+      for (const { fail } of waiting.values()) fail(new Error("Chromium closed the connection"));
+      waiting.clear();
+    };
     const send = (method, params = {}, sessionId) => new Promise((done, fail) => {
+      if (closed) return fail(new Error("Chromium closed the connection"));
       const id = ++next;
       waiting.set(id, { done, fail });
       socket.send(JSON.stringify({ id, method, params, sessionId }));
@@ -197,7 +205,7 @@ async function check(url, { timeout, settle, screenshot }) {
     console.log(`screen: ${stats.colours} colours, ${(100 * stats.lit).toFixed(0)}% lit; state "${after}"`);
     if (after !== "running") problems.push(`the page reports "${after}" after loading`);
     if (!looksDrawn(stats)) problems.push("the screen looks blank (the title wasn't drawn)");
-    await send("Browser.close").catch(() => {});
+    await Promise.race([send("Browser.close").catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
   } catch (error) {
     problems.push(error.message);
   } finally {
