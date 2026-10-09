@@ -13,7 +13,7 @@ Climb the ruined city. Descend beneath it. Silence the Brass Regent.
 [![Status](https://img.shields.io/badge/Status-playable%20prototype-747b98?style=flat-square)](#project-status)
 [![Rust checks](https://github.com/nearbycoder/Cinderwake/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nearbycoder/Cinderwake/actions/workflows/ci.yml)
 
-[Trailer](https://github.com/nearbycoder/Cinderwake/raw/refs/heads/main/docs/media/cinderwake-demo.mp4) · [Play](#play) · [Explore the city](#a-city-with-depth) · [Controls](#controls) · [Engine notes](docs/ENGINE.md)
+**[Play in your browser](https://nearbycoder.github.io/Cinderwake/)** · [Trailer](https://github.com/nearbycoder/Cinderwake/raw/refs/heads/main/docs/media/cinderwake-demo.mp4) · [Build and play](#play) · [Explore the city](#a-city-with-depth) · [Controls](#controls) · [Engine notes](docs/ENGINE.md)
 
 </div>
 
@@ -22,6 +22,8 @@ Climb the ruined city. Descend beneath it. Silence the Brass Regent.
 </p>
 
 <p align="center"><strong><a href="https://github.com/nearbycoder/Cinderwake/raw/refs/heads/main/docs/media/cinderwake-demo.mp4">Watch the trailer · MP4 · 43 seconds · 1080p</a></strong></p>
+
+**[Play in your browser](https://nearbycoder.github.io/Cinderwake/)**: a 53 MB download, then keyboard, mouse, or controller. It was checked in headless Chromium 151 and Firefox 157 on Linux, not yet in Safari or on phones (touch isn't supported). Progress and options stay in that browser, sound starts with the first key or click, there's no Quit (close the tab), and Ultra keeps sharp unfiltered textures; [more on the browser version](#in-a-browser).
 
 The **trailer** is recorded from the game at graphics fidelity Ultra: 11 seconds of a scripted fight with live physics and combat, the route from the upper galleries down into the undercroft and on to the bellgate (guardians removed so the route is visible; normal play has them), a camera tour of the four biomes, and the Regent's arena and three menus as staged game screens. Its sound is the game's own music and the effects those frames played, with no narration. The preview above is a silent excerpt of the fight. See [how the media is made](docs/media/README.md).
 
@@ -81,7 +83,7 @@ Every screenshot is drawn by the game at graphics fidelity Ultra. The galleries 
 
 ## Play
 
-There are no downloadable releases or hosted browser version yet, so you build the game from source. Install the [Rust toolchain](https://www.rust-lang.org/tools/install), then:
+You can [play in your browser](https://nearbycoder.github.io/Cinderwake/). There are no downloadable releases yet, so for the desktop version you build the game from source. Install the [Rust toolchain](https://www.rust-lang.org/tools/install), then:
 
 ```sh
 git clone https://github.com/nearbycoder/Cinderwake.git
@@ -100,7 +102,7 @@ Press **Enter** (or **A** on a controller) to begin. Tips introduce each move th
 | **Graphics** | OpenGL on the desktop, through Macroquad; WebGL in the browser |
 | **Building** | A current stable Rust toolchain (development uses Rust 1.96). On Linux you may need the X11, OpenGL, ALSA, and udev development packages (udev is for controllers) |
 | **Linux tarball** | x86_64 with glibc 2.34 or newer |
-| **Browser** | A WebGL-capable browser and a 52 MB download; checked only in headless Chrome |
+| **Browser** | A WebGL-capable browser and a 53 MB download; checked in headless Chromium and Firefox on Linux |
 | **Input** | Keyboard, with the mouse for menus, strikes, and parries, or a controller. Touch screens aren't supported |
 
 To build a local macOS app:
@@ -120,16 +122,28 @@ To build a portable Linux tarball (x86_64, glibc 2.34 or newer):
 
 It contains the executable, licenses, and a short README. It is for local sharing and testing, not a published release.
 
-### In a browser (experimental)
+### In a browser
+
+The browser version is meant to be served by GitHub Pages at <https://nearbycoder.github.io/Cinderwake/>. To build and serve it yourself:
 
 ```sh
-./scripts/build-web.sh
-python3 -m http.server -d dist/web 8080   # then open http://localhost:8080
+./scripts/build-pages.sh                  # writes the static site to dist/pages
+python3 -m http.server -d dist/pages 8080 # then open http://localhost:8080
+node scripts/check-pages.mjs http://localhost:8080/   # exits 0 once the title is drawn with no errors
 ```
 
-The browser build is a single WebAssembly file of about 52 MB, because all the art and audio are embedded. While it downloads, the page shows a progress bar, and if the download fails, the browser can't start WebGL, or the game stops with an error, the page says so. **F11** toggles the game's fullscreen without also triggering the browser's, and leaving fullscreen with the browser's **Esc** keeps the game's setting in step. Progress, options, and a run in progress are kept in the browser's `localStorage`, so closing the tab mid-run doesn't lose the run. At Ultra the browser keeps nearest-neighbour texture sampling, because WebGL 1 can't mipmap these textures.
+Every address in the site is relative, so it works from any folder, and it needs no special server headers. The game is about 53 MB, almost all of it embedded art and audio, sent as two 26 MB parts that the page joins. While it downloads, the page shows a progress bar, and if the download fails, the browser can't start WebGL, or the game stops with an error, the page says so. Progress, options, and a run in progress are kept in the browser's `localStorage`, so closing the tab mid-run doesn't lose the run.
 
-It has been tested only in headless Chrome on Linux, at 1× and 1.25× pixel ratios: starting a run, movement, the atlas, pausing, keeping progress across a reload, the menus and play with a scripted controller through the Gamepad API, a whole run with the mouse alone, and cycling the fidelity steps with **F9**. Nobody has listened to the browser build, and frame rate, Firefox, Safari, and mobile browsers haven't been checked.
+What differs from the desktop:
+
+- Sound starts with the first key press or click, as browsers require.
+- There's no Quit option; close the tab. **F12** screenshots are desktop-only.
+- Fullscreen (**F11** or the options page) has to be asked for on each visit, because browsers only allow it after a key press. Leaving with the browser's **Esc** keeps the setting in step.
+- At Ultra the browser keeps nearest-neighbour texture sampling, because WebGL 1 can't mipmap these textures. High is the default, as on the desktop.
+- A controller appears once one of its buttons is pressed on the page. Touch screens aren't supported, as on the desktop.
+- Saves belong to that browser and site; clearing the site's data deletes them, and they aren't shared with the desktop game.
+
+Tested in headless Chromium 151 and headless Firefox 157 on Linux, with the site served from a `/Cinderwake/` folder as GitHub Pages will: loading to the title with no console errors, sound held until the first key, starting a run with the keyboard, running, jumping, striking, dodging, pausing, a fidelity change surviving a reload, and a scripted controller starting a run (`node scripts/test-pages.mjs <url>`). Earlier rounds also checked the atlas, the mouse alone, and pixel ratios of 1 and 1.25 in headless Chrome. Nobody has listened to the browser build, and frame rate on real graphics hardware, Safari, and mobile browsers haven't been checked.
 
 See [build and verification notes](docs/ENGINE.md#build-and-verification) for more detail.
 
@@ -254,7 +268,7 @@ The current scope is deliberately visible: one final boss, an authored route str
 - **Not checked:** Windows; macOS since launch (the improvement rounds ran on Linux); other GPUs; and performance on weak graphics. Frame times measured on the shared development machine say more about its other work than about the game.
 - **Nobody has listened** to the synthesized music and effects on the test machine, so their quality is unjudged.
 - Menus ease in but close instantly. The first switch to Ultra builds the art's mipmaps, a one-time hitch that hasn't been measured.
-- The browser build is a 52 MB download, and there's no published release or hosted version.
+- The browser version is a 53 MB download, because the art is stored at full size, and there's no published desktop release.
 
 ## Build and test
 
