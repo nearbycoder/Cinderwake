@@ -23,7 +23,7 @@ Climb the ruined city. Descend beneath it. Silence the Brass Regent.
 
 <p align="center"><strong><a href="https://github.com/nearbycoder/Cinderwake/raw/refs/heads/main/docs/media/cinderwake-demo.mp4">Watch the trailer · MP4 · 43 seconds · 1080p</a></strong></p>
 
-**[Play in your browser](https://nearbycoder.github.io/Cinderwake/)**: a 53 MB download, then keyboard, mouse, or controller. It was checked in headless Chromium 151 and Firefox 157 on Linux, not yet in Safari or on phones (touch isn't supported). Progress and options stay in that browser, sound starts with the first key or click, there's no Quit (close the tab), and Ultra keeps sharp unfiltered textures; [more on the browser version](#in-a-browser).
+**[Play in your browser](https://nearbycoder.github.io/Cinderwake/)**: a 53 MB download, then keyboard, mouse, or controller, or [on-screen controls](#on-a-touch-screen) on a phone or tablet held sideways. It was checked in headless Chromium 151 and Firefox 157 on Linux, and with iPhone, iPad, and Android phone profiles in headless WebKit and Chromium, but not yet on a real phone or in Safari itself. Progress and options stay in that browser, sound starts with the first key, click, or tap, there's no Quit (close the tab), and Ultra keeps sharp unfiltered textures; [more on the browser version](#in-a-browser).
 
 The **trailer** is recorded from the game at graphics fidelity Ultra: 11 seconds of a scripted fight with live physics and combat, the route from the upper galleries down into the undercroft and on to the bellgate (guardians removed so the route is visible; normal play has them), a camera tour of the four biomes, and the Regent's arena and three menus as staged game screens. Its sound is the game's own music and the effects those frames played, with no narration. The preview above is a silent excerpt of the fight. See [how the media is made](docs/media/README.md).
 
@@ -102,8 +102,8 @@ Press **Enter** (or **A** on a controller) to begin. Tips introduce each move th
 | **Graphics** | OpenGL on the desktop, through Macroquad; WebGL in the browser |
 | **Building** | A current stable Rust toolchain (development uses Rust 1.96). On Linux you may need the X11, OpenGL, ALSA, and udev development packages (udev is for controllers) |
 | **Linux tarball** | x86_64 with glibc 2.34 or newer |
-| **Browser** | A WebGL-capable browser and a 53 MB download; checked in headless Chromium and Firefox on Linux |
-| **Input** | Keyboard, with the mouse for menus, strikes, and parries, or a controller. Touch screens aren't supported |
+| **Browser** | A WebGL-capable browser and a 53 MB download; checked in headless Chromium and Firefox on Linux, and in headless WebKit (iPhone 15 and iPad Pro 11 profiles) and Chromium (Pixel 7 profile) |
+| **Input** | Keyboard, with the mouse for menus, strikes, and parries, or a controller. In the browser on phones and tablets, on-screen touch controls |
 
 To build a local macOS app:
 
@@ -136,14 +136,26 @@ Every address in the site is relative, so it works from any folder, and it needs
 
 What differs from the desktop:
 
-- Sound starts with the first key press or click, as browsers require.
+- Sound starts with the first key press, click, or tap, as browsers require.
 - There's no Quit option; close the tab. **F12** screenshots are desktop-only.
 - Fullscreen (**F11** or the options page) has to be asked for on each visit, because browsers only allow it after a key press. Leaving with the browser's **Esc** keeps the setting in step.
 - At Ultra the browser keeps nearest-neighbour texture sampling, because WebGL 1 can't mipmap these textures. High is the default, as on the desktop.
-- A controller appears once one of its buttons is pressed on the page. Touch screens aren't supported, as on the desktop.
+- A controller appears once one of its buttons is pressed on the page.
 - Saves belong to that browser and site; clearing the site's data deletes them, and they aren't shared with the desktop game.
 
-Tested in headless Chromium 151 and headless Firefox 157 on Linux, with the site served from a `/Cinderwake/` folder as GitHub Pages will: loading to the title with no console errors, sound held until the first key, starting a run with the keyboard, running, jumping, striking, dodging, pausing, a fidelity change surviving a reload, and a scripted controller starting a run (`node scripts/test-pages.mjs <url>`). Earlier rounds also checked the atlas, the mouse alone, and pixel ratios of 1 and 1.25 in headless Chrome. Nobody has listened to the browser build, and frame rate on real graphics hardware, Safari, and mobile browsers haven't been checked.
+Tested in headless Chromium 151 and headless Firefox 157 on Linux, with the site served from a `/Cinderwake/` folder as GitHub Pages will: loading to the title with no console errors, the touch controls staying hidden, sound held until the first key, starting a run with the keyboard, running, jumping, striking, dodging, pausing, a fidelity change surviving a reload, and a scripted controller starting a run (`node scripts/test-pages.mjs <url>`). Earlier rounds also checked the atlas, the mouse alone, and pixel ratios of 1 and 1.25 in headless Chrome. Nobody has listened to the browser build, and frame rate on real graphics hardware, Safari, and mobile browsers haven't been checked.
+
+#### On phones and tablets
+
+The browser version plays on phones and tablets held sideways, with [on-screen controls](#on-a-touch-screen):
+
+- The controls appear on devices whose main pointer is a finger (a coarse pointer and no mouse or trackpad), or after the first real touch on any device. A key press, a mouse, or a controller hides them again, and the next touch brings them back. Desktop browsers never show them.
+- Menus are tapped: every button, card, row, and link on the game's own screens works by tap, and prompts say **TAP** while the controls are shown. Sound starts with the first tap.
+- The game needs landscape. Held upright, the page asks to turn the device and pauses a run until it is.
+- The page can't be scrolled, zoomed, or selected, the controls avoid the notch and the home indicator, and several fingers work at once: hold the stick, jump, and strike together, or slide a thumb from one button to the next.
+- To fit a phone's memory, the browser build draws at most two device pixels per CSS pixel, decodes only the biome on screen, and keeps the download in one buffer that goes once it's compiled. If the browser still closes the tab for lack of memory, the reloaded page says that this is what probably happened, and a lost graphics context gets its own message instead of a frozen screen.
+
+Checked with `node scripts/test-mobile.mjs <url>` in headless WebKit 26.6 with iPhone 15 and iPad Pro 11 profiles and headless Chromium 151 with a Pixel 7 profile, driving each with touch events: the title, the turn-the-device notice, starting a run by tapping, running with the stick while jumping and striking, every other button, pushing the stick down, the atlas and pause buttons, resuming by tap, and the controls hiding after a key and returning on the next touch. It also confirms they stay hidden in desktop Chromium. Not checked: a real phone or tablet, Safari's actual memory limit, frame rate on a phone's graphics, and how sound behaves on iOS (headless WebKit here has no sound device).
 
 See [build and verification notes](docs/ENGINE.md#build-and-verification) for more detail.
 
@@ -226,6 +238,22 @@ Buttons use Xbox names; on other pads, **A** is the bottom face button, **B** th
 
 Removing a controller during play pauses the run. The controller layout can't be changed yet. Controllers work on the desktop through [gilrs](https://gitlab.com/gilrs-project/gilrs) and in the browser build through the Gamepad API. Both were checked with simulated controllers (a virtual Linux device and a scripted browser pad), not with a physical one.
 
+### On a touch screen
+
+In the browser on a phone or tablet held sideways (see [above](#on-phones-and-tablets)):
+
+| Control | In play |
+| --- | --- |
+| **Stick** (left thumb) | Move; push down to drop through a ledge (with **JUMP**), to slam in mid-air, or, held while standing still, to look below |
+| **JUMP** | Jump; press again for a double jump |
+| **STRIKE** | Melee combo; hold to repeat |
+| **DODGE** / **PARRY** | Dodge / directional parry |
+| **BOLT** / **VESSEL** / **SNARE** | Fire glassbolt / throw fire vessel / place arc snare |
+| **FLASK** / **USE** | Drink a flask / interact |
+| **MAP** / **II** (top right) | Vertical atlas / pause |
+
+Everything else is tapped on the screen itself. The layout can't be changed.
+
 ## Settings and accessibility
 
 The options page (**O** from the title or pause screen) saves its choices separately from your progress:
@@ -237,7 +265,7 @@ The options page (**O** from the title or pause screen) saves its choices separa
 - **Gameplay tips** that teach each move the first time it matters; turning them back on replays them.
 - **Fullscreen** (also **F11**), and **Controls**, where gameplay keys can be rebound.
 
-Also built in: every menu works with the mouse alone, highlighting what the cursor points at; on-screen prompts follow whichever of keyboard, mouse, or controller you used last; presses made up to 0.15 s early still happen, and the HUD outlines a slot whose press couldn't; guardians and bolts threatening from off screen are marked at its edge; and the game pauses when its window or tab loses focus or a controller is removed. Play is drawn between simulation steps, so motion stays even at any refresh rate. Remapping controller buttons, subtitles for sounds, and colour-blind options aren't implemented.
+Also built in: every menu works with the mouse alone, highlighting what the cursor points at; on-screen prompts follow whichever of keyboard, mouse, controller, or touch you used last; presses made up to 0.15 s early still happen, and the HUD outlines a slot whose press couldn't; guardians and bolts threatening from off screen are marked at its edge; and the game pauses when its window or tab loses focus or a controller is removed. Play is drawn between simulation steps, so motion stays even at any refresh rate. Remapping controller buttons, subtitles for sounds, and colour-blind options aren't implemented.
 
 ## Inside the engine
 
@@ -265,6 +293,7 @@ The current scope is deliberately visible: one final boss, an authored route str
 
 - **Balance hasn't been playtested.** Guardians usually fall in under a second against the expected build, so a single guardian is rarely a threat. Whether they need more health is waiting on a human playtest.
 - **Controllers were tested only with simulated devices** (a virtual Linux controller and a scripted browser pad), never a physical one. The controller layout can't be changed.
+- **The touch controls were tested only in headless browsers** with phone and tablet profiles, never on a real phone or tablet, and their layout can't be changed.
 - **Not checked:** Windows; macOS since launch (the improvement rounds ran on Linux); other GPUs; and performance on weak graphics. Frame times measured on the shared development machine say more about its other work than about the game.
 - **Nobody has listened** to the synthesized music and effects on the test machine, so their quality is unjudged.
 - Menus ease in but close instantly. The first switch to Ultra builds the art's mipmaps, a one-time hitch that hasn't been measured.
