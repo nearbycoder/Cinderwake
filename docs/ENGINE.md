@@ -275,8 +275,8 @@ Memory, measured with `scripts/test-mobile.mjs` and the peak resident size (`VmH
 
 | Profile (headless) | Before (`main` at 596335c) | After |
 | --- | --- | --- |
-| iPhone 15, WebKit 26.6 | Never reached the title (waiting on a sound, below); with only that fixed, a 1569 MB peak and 584 MB of WebAssembly memory | 946 MB peak to the title (992 MB through the touch session); 111 MB of WebAssembly memory; 119 MB given to WebGL |
-| iPad Pro 11, WebKit 26.6 | Never reached the title; with the sound fixed, a 1187 MB peak | 981 MB peak to the title (1297 MB through the session, which also resizes to portrait and back) |
+| iPhone 15, WebKit 26.6 | Never reached the title (waiting on a sound, below); with only that fixed, a 1569 MB peak and 584 MB of WebAssembly memory | 946 MB peak to the title, 1320 MB through the touch session (which loads the page a second time in the same process); 111 MB of WebAssembly memory; 119 MB given to WebGL |
+| iPad Pro 11, WebKit 26.6 | Never reached the title; with the sound fixed, a 1187 MB peak | 981 MB peak to the title, 1300 MB through the touch session |
 | Pixel 7, Chromium 151 | 534 MB (renderer) and 559 MB (GPU process); 123 MB of WebAssembly memory; 169 MB given to WebGL | 464 MB and 443 MB; 111 MB; 119 MB |
 | Desktop 1280 × 720, Chromium 151 | 1134 MB and 1097 MB; 517 MB of WebAssembly memory; 408 MB given to WebGL | 430 MB and 370 MB; 95 MB; 103 MB |
 
