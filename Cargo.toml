@@ -19,3 +19,9 @@ gilrs = "0.11"
 lto = true
 codegen-units = 1
 strip = true
+
+# Macroquad 0.4.16 with one fix to its glyph atlas, which could grow to
+# 8192 × 8192 (about 270 MB of memory and as much again on the GPU) while
+# caching the interface's text. See vendor/README.md.
+[patch.crates-io]
+macroquad = { path = "vendor/macroquad" }
