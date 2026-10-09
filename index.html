@@ -2,12 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Cinderwake — A Clockwork Roguelite</title>
   <link rel="icon" type="image/png" href="favicon.png">
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d16; }
-    canvas { display: block; width: 100%; height: 100%; outline: none; }
+    /* On phones: no scrolling, rubber-banding, zooming, selection, long-press
+       callouts, or tap flashes; the page is the game. */
+    html { height: 100dvh; overscroll-behavior: none; touch-action: none; -webkit-text-size-adjust: 100%; }
+    body { position: fixed; inset: 0; width: 100%; user-select: none; -webkit-user-select: none;
+      -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+    canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
     #loading {
       position: fixed; inset: 0; display: grid; place-content: center; gap: 12px;
       color: #f2d7a2; font: 18px Georgia, serif; text-align: center; pointer-events: none;
@@ -27,6 +32,7 @@
       color: #f2d7a2; font: 16px Georgia, serif; text-align: center;
     }
     #stopped small { display: block; margin-top: 4px; color: #a1c6c4; font: 13px Georgia, serif; }
+    #loading .note { max-width: 30em; margin: 0 auto; padding: 0 16px; color: #f0a48a; font: 14px Georgia, serif; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -38,9 +44,62 @@
   </div>
   <!-- The bundle's unused quad_net plugin assigns this undeclared global in strict mode. -->
   <script>var register_plugin;</script>
+  <script>
+    // Sound, set up before Miniquad's loader keeps a reference to the
+    // browser's AudioContext. The loader resumes sound on the first
+    // touchstart, key, or click only; iOS counts a touchend or a click as
+    // the gesture instead, and suspends sound again after a call or a trip
+    // to the home screen, so every touchend, click, and key resumes it.
+    (function () {
+      "use strict";
+      const contexts = [];
+      for (const name of ["AudioContext", "webkitAudioContext"]) {
+        const Real = window[name];
+        if (typeof Real !== "function") continue;
+        // A sound the browser can't decode plays as silence instead of
+        // leaving the game waiting for it forever.
+        const decode = Real.prototype.decodeAudioData;
+        Real.prototype.decodeAudioData = function (data, done, failed) {
+          const silence = () => this.createBuffer(1, 1, this.sampleRate);
+          const fallback = (error) => {
+            console.warn(`A sound couldn't be decoded and will be silent${error && error.message ? `: ${error.message}` : "."}`);
+            if (done) done(silence());
+          };
+          const decoding = decode.call(this, data, done, fallback);
+          return decoding && decoding.catch ? decoding.catch(() => silence()) : decoding;
+        };
+        // Miniquad's loader asks to resume without handling a refusal (no
+        // sound device, or no gesture yet); the next tap or key tries again.
+        const resume = Real.prototype.resume;
+        Real.prototype.resume = function (...args) {
+          const resumed = resume.apply(this, args);
+          if (resumed && resumed.catch) resumed.catch((e) => console.info(`Sound couldn't start yet: ${e && e.message}`));
+          return resumed;
+        };
+        window[name] = class extends Real {
+          constructor(...args) {
+            super(...args);
+            contexts.push(this);
+          }
+        };
+      }
+      const resume = () => {
+        for (const context of contexts) {
+          if (context.state === "running" || context.state === "closed") continue;
+          context.resume();
+        }
+      };
+      // The audio contexts' states, for scripts/test-mobile.mjs.
+      window.cinderwakeAudio = () => contexts.map((context) => context.state);
+      for (const type of ["touchend", "click", "keydown"]) {
+        document.addEventListener(type, resume, { capture: true, passive: true });
+      }
+    })();
+  </script>
   <script src="mq_js_bundle.js"></script>
   <script src="cinderwake-storage.js"></script>
   <script src="cinderwake-pad.js"></script>
+  <script src="cinderwake-touch.js"></script>
   <script>
     // Miniquad's loader keeps Space, the arrows, Tab, and F1–F10 from reaching
     // the browser, but not F11, which would then toggle the browser's own
@@ -48,6 +107,15 @@
     document.getElementById("glcanvas").addEventListener("keydown", (e) => {
       if (e.code === "F11") e.preventDefault();
     });
+    // Miniquad asks for WebGL with the browser's defaults, which multisample
+    // the page-sized canvas. The game draws its scene offscreen and only
+    // copies it to the canvas, and the desktop game draws without
+    // multisampling, so the canvas goes without: the same picture, and on an
+    // iPad-sized screen tens of megabytes less graphics memory.
+    document.getElementById("glcanvas").getContext = function (type, attributes) {
+      const options = type === "webgl" || type === "webgl2" ? { antialias: false, ...attributes } : attributes;
+      return HTMLCanvasElement.prototype.getContext.call(this, type, options);
+    };
     // The loader calls these without handling a refusal, which then shows as
     // an uncaught error. The game notices a refusal itself and says so, so
     // these note it quietly. They call the browser's own functions each time.
@@ -79,11 +147,37 @@
       if (failed) return;
       failed = true;
       state("failed");
+      remember(null);
       loading.classList.add("failed");
       loading.setAttribute("role", "alert");
       say(title, detail);
     };
     const megabytes = (bytes) => (bytes / 1e6).toFixed(1);
+    const touchFirst = window.cinderwakeTouch && window.cinderwakeTouch.shown();
+    if (touchFirst) say("Kindling the city…", "about 53 MB · on-screen controls, keyboard, or controller");
+    // Phones close a tab that runs out of memory and reload it. The page
+    // notes when the game is loading or running and clears that when it is
+    // left normally, so after such a reload it can say what probably
+    // happened instead of starting over without a word.
+    const SESSION = "cinderwake-session";
+    const remember = (value) => {
+      try {
+        if (value) sessionStorage.setItem(SESSION, value);
+        else sessionStorage.removeItem(SESSION);
+      } catch (_) { /* storage blocked */ }
+    };
+    let previous = null;
+    try { previous = sessionStorage.getItem(SESSION); } catch (_) { /* storage blocked */ }
+    if (previous) {
+      const note = document.createElement("small");
+      note.className = "note";
+      note.textContent = previous === "running"
+        ? "The browser closed Cinderwake last time, most likely because the device ran short of memory. Progress up to the last checkpoint is kept. Closing other tabs and apps can help."
+        : "Cinderwake stopped while starting last time, most likely because the device ran short of memory. Closing other tabs and apps can help.";
+      loading.append(note);
+    }
+    window.addEventListener("pagehide", () => remember(null));
+    remember("loading");
     function webglAvailable() {
       const probe = document.createElement("canvas");
       const gl = probe.getContext("webgl2") || probe.getContext("webgl");
@@ -91,29 +185,39 @@
       return !!gl;
     }
     // A failed compile or start reaches only the loader's own catch.
-    const watched = {};
-    for (const name of ["compileStreaming", "instantiate"]) {
-      const real = WebAssembly[name];
-      if (typeof real !== "function") continue;
-      watched[name] = real;
-      WebAssembly[name] = function (...args) {
-        return real.apply(this, args).catch((error) => {
-          fail("Cinderwake couldn't start in this browser.",
-            `${error && error.message ? error.message + ". " : ""}Reload the page to try again, or try a current Chrome, Edge, or Firefox.`);
-          throw error;
-        });
-      };
-    }
+    const startFailed = (error) => {
+      fail("Cinderwake couldn't start in this browser.",
+        `${error && error.message ? error.message + ". " : ""}Reload the page to try again, or try a current Chrome, Edge, or Firefox.`);
+      throw error;
+    };
+    const watched = { compileStreaming: WebAssembly.compileStreaming, instantiate: WebAssembly.instantiate };
+    WebAssembly.instantiate = function (...args) {
+      return watched.instantiate.apply(this, args).catch(startFailed);
+    };
     // Once running, a WebAssembly error (a crash in the game) stops it.
     window.addEventListener("error", (event) => {
       if (!(event.error instanceof WebAssembly.RuntimeError)) return;
       if (document.getElementById("stopped")) return;
       state("stopped");
+      remember(null);
       loading.remove();
       const note = document.createElement("div");
       note.id = "stopped";
       note.setAttribute("role", "alert");
       note.innerHTML = "Cinderwake stopped unexpectedly.<small>Reload the page to continue. Progress, options, and the last checkpoint of a run are kept in this browser.</small>";
+      document.body.append(note);
+    });
+    // A phone short of graphics memory can take the WebGL context away.
+    document.getElementById("glcanvas").addEventListener("webglcontextlost", (event) => {
+      event.preventDefault();
+      if (document.getElementById("stopped")) return;
+      state("stopped");
+      remember(null);
+      loading.remove();
+      const note = document.createElement("div");
+      note.id = "stopped";
+      note.setAttribute("role", "alert");
+      note.innerHTML = "The browser took the graphics away from Cinderwake, which usually means the device ran short of memory.<small>Reload the page to continue; closing other tabs and apps can help. Progress, options, and the last checkpoint of a run are kept in this browser.</small>";
       document.body.append(note);
     });
     async function fetched(path, options) {
@@ -141,6 +245,13 @@
       }
       const fill = document.getElementById("loading-fill");
       const counts = files.parts.map(() => 0);
+      // Each part is written straight into one buffer of the game's size, so
+      // a phone never holds the download twice (as parts and joined).
+      const even = Math.ceil(files.bytes / files.parts.length);
+      const sizes = files.sizes || files.parts.map((_, i) => Math.min(even, files.bytes - i * even));
+      const offsets = sizes.map((_, i) => sizes.slice(0, i).reduce((a, b) => a + b, 0));
+      const whole = new Uint8Array(files.bytes);
+      const incomplete = () => new Error(`The download was incomplete (${megabytes(counts.reduce((a, b) => a + b, 0))} of ${megabytes(files.bytes)} MB). Reload the page to try again.`);
       // One part failing stops the others.
       const stop = new AbortController();
       const show = () => {
@@ -150,31 +261,32 @@
         say("Kindling the city…", `${megabytes(received)} of ${megabytes(files.bytes)} MB`);
       };
       show();
-      const parts = await Promise.all(files.parts.map(async (path, i) => {
+      await Promise.all(files.parts.map(async (path, i) => {
         const response = await fetched(path, { signal: stop.signal });
-        const chunks = [];
+        let overrun = false;
         try {
           const reader = response.body.getReader();
           for (;;) {
             const { done, value } = await reader.read();
             if (done) break;
-            chunks.push(value);
+            if (counts[i] + value.length > sizes[i]) {
+              overrun = true;
+              throw incomplete();
+            }
+            whole.set(value, offsets[i] + counts[i]);
             counts[i] += value.length;
             show();
           }
         } catch (error) {
+          if (overrun) throw error;
           throw new Error(`The download stopped after ${megabytes(counts.reduce((a, b) => a + b, 0))} MB. Check the connection, then reload the page.`);
         }
-        return new Blob(chunks);
+        if (counts[i] !== sizes[i]) throw incomplete();
       })).catch((error) => {
         stop.abort();
         throw error;
       });
-      const file = new Blob(parts, { type: "application/wasm" });
-      if (file.size !== files.bytes) {
-        throw new Error(`The download was incomplete (${megabytes(file.size)} of ${megabytes(files.bytes)} MB). Reload the page to try again.`);
-      }
-      return file;
+      return whole;
     }
     (async () => {
       if (!webglAvailable()) {
@@ -182,9 +294,9 @@
           "Turn on hardware acceleration in the browser's settings, or try another browser.");
         return;
       }
-      let file;
+      let bytes;
       try {
-        file = await download();
+        bytes = await download();
       } catch (error) {
         fail("Cinderwake couldn't be loaded.", error.message);
         return;
@@ -194,6 +306,7 @@
       // art and sound are decoded, which can take a few seconds.
       window.addEventListener("cinderwake-ready", () => {
         Object.assign(WebAssembly, watched);
+        remember("running");
         requestAnimationFrame(() => requestAnimationFrame(() => {
           if (failed || document.documentElement.dataset.game !== "loading") return;
           loading.remove();
@@ -202,7 +315,15 @@
           state("running");
         }));
       }, { once: true });
-      load(URL.createObjectURL(file));
+      // The loader fetches the game itself and compiles it as it streams.
+      // It is handed the bytes already here instead, which are let go as soon
+      // as they're compiled; the address it fetches is an empty placeholder.
+      WebAssembly.compileStreaming = function () {
+        const module = bytes;
+        bytes = null;
+        return WebAssembly.compile(module).catch(startFailed);
+      };
+      load("data:application/wasm,");
     })();
   </script>
 </body>
