@@ -22,6 +22,8 @@
             }
           });
         }
+        // A real controller in use hides the on-screen touch controls.
+        if (bits && window.cinderwakeTouch) window.cinderwakeTouch.padUsed();
         return bits >>> 0;
       };
       // Connected pads. Browsers list a pad only after one of its buttons
@@ -38,6 +40,7 @@
             value = axis;
           }
         }
+        if (Math.abs(value) > 0.5 && window.cinderwakeTouch) window.cinderwakeTouch.padUsed();
         return value;
       };
     },

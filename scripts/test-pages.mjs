@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // A short scripted session with the browser build, in headless Chromium and
-// headless Firefox: loading to the title, audio starting only after the first
-// key, a few seconds of play, a fidelity change surviving a reload, and a
-// scripted controller. Logs and screenshots go to target/pages-test/<browser>/.
+// headless Firefox: loading to the title, the touch controls staying hidden,
+// audio starting only after the first key, a few seconds of play, a fidelity
+// change surviving a reload, and a scripted controller. Logs and screenshots
+// go to target/pages-test/<browser>/.
 //
 //   npm install --prefix target/web-tools puppeteer-core@25   # once
 //   node scripts/test-pages.mjs http://127.0.0.1:8080/Cinderwake/ [chromium|firefox]
@@ -170,6 +171,14 @@ async function session(name) {
     await page.goto(url, { waitUntil: "load" });
     await toTitle("01-title", true);
     log(`load to running: ${((Date.now() - loadStart) / 1000).toFixed(1)} s including page load`);
+    // The on-screen touch controls (web/cinderwake-touch.js) are for phones
+    // and tablets; a desktop never shows them.
+    const touchShown = () => page.evaluate(() => {
+      const touch = document.getElementById("touch");
+      return touch ? !touch.hidden && getComputedStyle(touch).display !== "none" : null;
+    });
+    const touchAtTitle = await touchShown();
+    result(touchAtTitle === false, `the on-screen touch controls are hidden at the title (${touchAtTitle === null ? "missing" : touchAtTitle ? "shown" : "hidden"})`);
 
     // 2. Audio waits for the first key, which goes to the game unclicked.
     const before = { states: [...seen.audio], sounds: seen.sounds };
@@ -238,6 +247,8 @@ async function session(name) {
     log(`fullscreen after F11: ${full ?? "not entered (headless)"}`);
     await shot("10-after-f11");
 
+    const touchAtEnd = await touchShown();
+    result(touchAtEnd === false, `the on-screen touch controls stayed hidden through keys and a controller (${touchAtEnd})`);
     const state = await page.evaluate(() => document.documentElement.dataset.game);
     result(state === "running", `still running at the end (state "${state}")`);
     result(errors.length === 0, `no console errors, uncaught exceptions, or failed requests (${errors.length})`);

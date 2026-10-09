@@ -1,6 +1,7 @@
 //! Gamepads, with one fixed layout in the Xbox naming most pads use. The
 //! desktop reads controllers through `gilrs`; the browser build reads the
-//! Gamepad API through `web/cinderwake-pad.js`. Both feed the same `State`, so
+//! Gamepad API through `web/cinderwake-pad.js`, and its on-screen touch
+//! controls (`touch`) through the same layout. All feed the same `State`, so
 //! the mapping below is shared and testable without a controller.
 use crate::controls::Action;
 use crate::game::Input;
@@ -386,15 +387,24 @@ impl Backend {
     }
     fn read(&mut self) -> State {
         // SAFETY: plain value calls into web/cinderwake-pad.js.
-        let (bits, x, y) = unsafe {
+        let (pad_bits, x, y) = unsafe {
             (
                 cinderwake_pad_buttons(),
                 cinderwake_pad_axis(0),
                 cinderwake_pad_axis(1),
             )
         };
+        // The on-screen touch controls share the layout; whichever stick is
+        // pushed further steers.
+        let bits = pad_bits | crate::touch::buttons();
+        let touch = crate::touch::stick();
+        let stick = if touch.length() > vec2(x, y).length() {
+            touch
+        } else {
+            vec2(x, y)
+        };
         let mut state = State {
-            stick: vec2(x, y),
+            stick,
             ..State::default()
         };
         for b in Button::ALL {

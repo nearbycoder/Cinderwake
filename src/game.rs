@@ -113,7 +113,7 @@ impl Hint {
         let k = |a| p.action(a);
         // Mouse alternatives are only worth mentioning to keyboard players.
         let click = |button: &str| {
-            if p.pad() {
+            if p.pad() || p.touch() {
                 String::new()
             } else {
                 format!(" or {button} click")
@@ -587,6 +587,9 @@ pub struct Game {
     pub practice: bool,
     /// Prompts name controller buttons while a controller was used last.
     pub pad_prompts: bool,
+    /// Prompts name the browser build's on-screen touch buttons while the
+    /// page shows them (web/cinderwake-touch.js).
+    pub touch_prompts: bool,
     /// Where the mouse points, in interface coordinates, while it was the
     /// last thing used. Menus highlight the target under it.
     pub pointer: Option<Vec2>,
@@ -722,6 +725,7 @@ impl Game {
             quit_armed: false,
             quit: false,
             pad_prompts: false,
+            touch_prompts: false,
             pointer: None,
             pad_lost: false,
             teach: false,
@@ -931,7 +935,7 @@ impl Game {
         self.pad_prompts = false;
     }
     pub fn prompts(&self) -> Prompts<'_> {
-        Prompts::new(&self.settings.keys, self.pad_prompts)
+        Prompts::new(&self.settings.keys, self.pad_prompts).with_touch(self.touch_prompts)
     }
     /// Asks to close the desktop game. Quitting mid-run is the same as
     /// closing the window: the run's last checkpoint stays.

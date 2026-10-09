@@ -18,6 +18,7 @@ mod save;
 mod scenery;
 mod settings;
 mod storage;
+mod touch;
 mod traversal_capture;
 mod ui;
 mod ui_fade;
@@ -1298,6 +1299,7 @@ async fn main() {
     let mut pad = pad::Pad::new();
     let mut mouse_held_over = false;
     let mut menu_repeat = MenuRepeat::default();
+    let mut touch_blocked = false;
     let mut last_mouse = Vec2::ZERO;
     let mut shown_cursor = Cursor::Default;
     let focus_events = macroquad::input::utils::register_input_subscriber();
@@ -1385,6 +1387,16 @@ async fn main() {
             }
         } else {
             pad.feed(pad::State::default());
+        }
+        // The browser's on-screen controls: prompts name them while they're
+        // shown, and asking to turn the device pauses a run, like losing focus.
+        if !staged && !automated {
+            let page = touch::page();
+            g.touch_prompts = page.shown;
+            if page.blocked && !touch_blocked {
+                g.focus_lost();
+            }
+            touch_blocked = page.blocked;
         }
         let screen_before_menus = g.screen;
         if !staged && !automated {
@@ -1510,7 +1522,11 @@ async fn main() {
         let mut input = if staged {
             Input::default()
         } else {
-            pad::combine(read_input(&g, !mouse_held_over), pad.gameplay())
+            // A tap on the canvas beside the touch buttons doesn't strike.
+            pad::combine(
+                read_input(&g, !mouse_held_over && !g.touch_prompts),
+                pad.gameplay(),
+            )
         };
         if vertical_capture && !staged {
             input = traversal.input(&g);
@@ -1552,6 +1568,7 @@ async fn main() {
         input.trap |= pending.trap;
         input.heal |= pending.heal;
         input.interact |= pending.interact;
+        touch::report(touch::Mode::for_game(&g), &input, g.player.pos);
         let paused = g.screen.freezes_world();
         let frame_dt = if demo || environment_tour {
             1. / 60.

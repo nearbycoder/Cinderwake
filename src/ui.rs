@@ -302,7 +302,9 @@ fn mouse_last(g: &Game) -> bool {
 /// The options page's footer, for the device used last.
 pub fn options_footer(g: &Game) -> String {
     let p = g.prompts();
-    if mouse_last(g) {
+    if p.touch() {
+        "TAP  a switch to flip it, a bar to set it, < > to step it".into()
+    } else if mouse_last(g) {
         "CLICK  a switch to flip it, a bar to set it, < > to step it      M  mute all sound".into()
     } else if p.pad() {
         format!(
@@ -321,7 +323,9 @@ pub fn options_footer(g: &Game) -> String {
 /// The controls page's footer, for the device used last.
 pub fn controls_footer(g: &Game) -> String {
     let p = g.prompts();
-    if mouse_last(g) {
+    if p.touch() {
+        "Keys apply to a keyboard; the on-screen buttons are fixed".into()
+    } else if mouse_last(g) {
         "CLICK  an action to rebind it, or restore the default keys".into()
     } else {
         format!(
@@ -333,7 +337,9 @@ pub fn controls_footer(g: &Game) -> String {
 }
 /// The Keeper's line above the route, for the device used last.
 pub fn route_hint(g: &Game) -> String {
-    if mouse_last(g) {
+    if g.prompts().touch() {
+        "TAP   the destination to change it".into()
+    } else if mouse_last(g) {
         "CLICK   the destination to change it".into()
     } else {
         format!(
@@ -506,7 +512,10 @@ impl Ui {
             );
         } else {
             self.centered_at(
-                &{
+                &if p.touch() {
+                    "Left thumb: the stick moves.   Right thumb: jump, strike, dodge, parry, and tools."
+                        .to_string()
+                } else {
                     let k = |a| p.action(a);
                     format!(
                         "{}  Move   {}  Jump   {}  Strike   {}  Dodge   {}  Parry",
@@ -557,8 +566,14 @@ impl Ui {
                 },
                 _ => continue,
             };
+            // Touch players tap the link itself, so it names only what it does.
+            let text = if p.touch() {
+                label.to_string()
+            } else {
+                format!("{key}  {label}")
+            };
             self.centered_at(
-                &format!("{key}  {label}"),
+                &text,
                 rect.x + rect.w / 2.,
                 rect.y + 17.,
                 size,
@@ -718,7 +733,9 @@ impl Ui {
                 ),
                 g.settings.reduce_flashes,
             );
-            self.key(key, x + 22., 682.);
+            if !prompts.touch() {
+                self.key(key, x + 22., 682.);
+            }
             self.text(name, x + 67., 665., 14., c(PALE));
             let status = if *cd > 0. {
                 let rate = if i >= 2 && p.mutation == 2 { 1.35 } else { 1. };
@@ -785,7 +802,9 @@ impl Ui {
             flask_refused,
             g.settings.reduce_flashes,
         );
-        self.key(prompts.action(Action::Heal), 844., 683.);
+        if !prompts.touch() {
+            self.key(prompts.action(Action::Heal), 844., 683.);
+        }
         self.text("HEALING FLASK", 886., 665., 14., c(PALE));
         if flask_refused > 0. {
             let size = if p.flask_note.len() > 6 { 14. } else { 18. };
@@ -828,15 +847,20 @@ impl Ui {
                 g.settings.reduce_flashes,
             );
         }
-        self.text(
-            &format!("{}  PARRY", prompts.action(Action::Parry)),
-            1077.,
-            669.,
-            15.,
-            c(PALE),
-        );
-        self.text(prompts.action(Action::Dodge), 1184., 668., 14., c(PALE));
-        self.text("DODGE", 1184., 684., 11., c(MUTED));
+        if prompts.touch() {
+            self.text("PARRY", 1077., 669., 15., c(PALE));
+            self.text("DODGE", 1184., 676., 14., c(PALE));
+        } else {
+            self.text(
+                &format!("{}  PARRY", prompts.action(Action::Parry)),
+                1077.,
+                669.,
+                15.,
+                c(PALE),
+            );
+            self.text(prompts.action(Action::Dodge), 1184., 668., 14., c(PALE));
+            self.text("DODGE", 1184., 684., 11., c(MUTED));
+        }
         self.text(
             &format!("{}  PAUSE", prompts.menu(Menu::Pause)),
             1077.,
@@ -1241,10 +1265,12 @@ impl Ui {
             Some(warning) => self.center(&warning, 478., 15., c(WARN)),
             None => self.center(&status, 478., 13., c(TEAL)),
         }
-        self.button(
-            &format!("{}   Resume the descent", p.menu(Menu::Pause)),
-            PAUSE_BUTTON,
-        );
+        let resume = if p.touch() {
+            p.menu(Menu::Confirm)
+        } else {
+            p.menu(Menu::Pause)
+        };
+        self.button(&format!("{resume}   Resume the descent"), PAUSE_BUTTON);
         self.links(g, 15.);
     }
     fn controls(&self, g: &Game) {

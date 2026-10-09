@@ -20,7 +20,7 @@ mkdir -p "$out"
 # The game is one ~52 MB file, almost all embedded art. It ships as parts under
 # GitHub's recommended 50 MB, named by content so a cached part from an older
 # build is never mixed with a newer one; web/index.html reads game-files.json
-# (fetched past the cache) and joins them.
+# (fetched past the cache) and writes each part into place in one buffer.
 python3 - target/wasm32-unknown-unknown/release/cinderwake.wasm "$out" <<'PY'
 import hashlib, json, math, sys
 wasm, out = sys.argv[1], sys.argv[2]
@@ -28,15 +28,17 @@ data = open(wasm, "rb").read()
 digest = hashlib.sha256(data).hexdigest()[:12]
 count = math.ceil(len(data) / (30 * 1024 * 1024))
 size = math.ceil(len(data) / count)
-parts = []
+parts, sizes = [], []
 for i in range(count):
     name = f"cinderwake-{digest}-{i + 1}.bin"
-    open(f"{out}/{name}", "wb").write(data[i * size:(i + 1) * size])
+    part = data[i * size:(i + 1) * size]
+    open(f"{out}/{name}", "wb").write(part)
     parts.append(name)
-json.dump({"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "parts": parts},
+    sizes.append(len(part))
+json.dump({"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "parts": parts, "sizes": sizes},
           open(f"{out}/game-files.json", "w"), indent=1)
 PY
-cp web/index.html web/favicon.png web/cinderwake-storage.js web/cinderwake-pad.js "$out/"
+cp web/index.html web/favicon.png web/cinderwake-storage.js web/cinderwake-pad.js web/cinderwake-touch.js "$out/"
 cp "$macroquad_dir/js/mq_js_bundle.js" "$out/"
 cp "$macroquad_dir/LICENSE-MIT" "$out/MACROQUAD-LICENSE-MIT.txt"
 cp LICENSE "$out/LICENSE.txt"

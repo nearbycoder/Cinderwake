@@ -273,22 +273,37 @@ pub enum Menu {
     Choice(usize),
 }
 
-/// Names for on-screen prompts: the player's keys, or the controller's fixed
-/// layout while a controller was the last thing used.
+/// Names for on-screen prompts: the player's keys, the controller's fixed
+/// layout while a controller was the last thing used, or the browser build's
+/// on-screen buttons while they are shown.
 #[derive(Clone, Copy)]
 pub struct Prompts<'a> {
     keys: &'a Bindings,
     pad: bool,
+    touch: bool,
 }
 impl<'a> Prompts<'a> {
     pub fn new(keys: &'a Bindings, pad: bool) -> Self {
-        Self { keys, pad }
+        Self {
+            keys,
+            pad,
+            touch: false,
+        }
+    }
+    /// Names the on-screen touch buttons instead, while they are shown.
+    pub fn with_touch(self, touch: bool) -> Self {
+        Self { touch, ..self }
     }
     pub fn pad(&self) -> bool {
-        self.pad
+        self.pad && !self.touch
+    }
+    pub fn touch(&self) -> bool {
+        self.touch
     }
     pub fn action(&self, action: Action) -> &'static str {
-        if self.pad {
+        if self.touch {
+            touch_label(action)
+        } else if self.pad {
             crate::pad::label(action)
         } else {
             self.keys.short(action)
@@ -296,7 +311,7 @@ impl<'a> Prompts<'a> {
     }
     /// Both directions of movement, for control lists.
     pub fn movement(&self) -> String {
-        if self.pad {
+        if self.pad || self.touch {
             "STICK".into()
         } else {
             format!(
@@ -308,7 +323,15 @@ impl<'a> Prompts<'a> {
     }
     pub fn menu(&self, menu: Menu) -> &'static str {
         use crate::pad::Button;
-        if self.pad {
+        if self.touch {
+            // Menus are tapped; play has its pause and atlas buttons.
+            match menu {
+                Menu::Pause => "II",
+                Menu::Atlas => "MAP",
+                Menu::Abandon => "ABANDON",
+                _ => "TAP",
+            }
+        } else if self.pad {
             match menu {
                 Menu::Confirm => Button::South.label(),
                 Menu::Back | Menu::QuitTitle => Button::East.label(),
@@ -334,6 +357,22 @@ impl<'a> Prompts<'a> {
                 Menu::Choice(i) => ["1", "2", "3"][i.min(2)],
             }
         }
+    }
+}
+/// The on-screen touch buttons' names (web/cinderwake-touch.js).
+fn touch_label(action: Action) -> &'static str {
+    match action {
+        Action::Left | Action::Right => "STICK",
+        Action::Jump => "JUMP",
+        Action::Down => "DOWN",
+        Action::Strike => "STRIKE",
+        Action::Glassbolt => "BOLT",
+        Action::Dodge => "DODGE",
+        Action::Parry => "PARRY",
+        Action::FireVessel => "VESSEL",
+        Action::ArcSnare => "SNARE",
+        Action::Heal => "FLASK",
+        Action::Interact => "USE",
     }
 }
 /// Numbered choices on a controller: left, top, and right face buttons, in
@@ -428,6 +467,17 @@ mod tests {
             ["X", "Y", "B"]
         );
         assert_eq!(keys.menu(Menu::Choice(2)), "3");
+        // The touch buttons win while they are shown, even after a pad press.
+        let touch = Prompts::new(&b, true).with_touch(true);
+        assert!(touch.touch() && !touch.pad());
+        assert_eq!(touch.action(Action::Jump), "JUMP");
+        assert_eq!(touch.action(Action::Heal), "FLASK");
+        assert_eq!(touch.movement(), "STICK");
+        assert_eq!(touch.menu(Menu::Confirm), "TAP");
+        assert_eq!(touch.menu(Menu::Pause), "II");
+        for action in Action::ALL {
+            assert!(!touch.action(action).is_empty());
+        }
     }
 
     #[test]
