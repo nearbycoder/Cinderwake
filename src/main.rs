@@ -548,6 +548,17 @@ fn cursor_for(g: &Game) -> Cursor {
 extern "C" {
     fn sapp_is_fullscreen() -> bool;
 }
+/// Tells the page the first frame has been drawn, after the embedded art and
+/// sound are decoded, so it can take down its loading notice
+/// (web/cinderwake-storage.js).
+#[cfg(target_arch = "wasm32")]
+fn tell_page_ready() {
+    extern "C" {
+        fn cinderwake_ready();
+    }
+    // SAFETY: a plain call with no arguments.
+    unsafe { cinderwake_ready() }
+}
 /// Browsers can leave fullscreen without the game (their own **Esc**), so the
 /// setting follows each change in the browser's state. `seen` is the browser
 /// state last observed. Returns whether the setting changed.
@@ -1829,6 +1840,10 @@ async fn main() {
                 );
                 break;
             }
+        }
+        #[cfg(target_arch = "wasm32")]
+        if frame == 0 {
+            tell_page_ready();
         }
         frame += 1;
         next_frame().await

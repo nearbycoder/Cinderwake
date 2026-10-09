@@ -1,5 +1,5 @@
-// Persists Cinderwake progress and settings in localStorage, and reads launch
-// options from the page address. Rust passes keys and values as UTF-8 byte
+// Persists Cinderwake progress and settings in localStorage, reads launch
+// options from the page address, and tells the page when the game is ready. Rust passes keys and values as UTF-8 byte
 // ranges in wasm memory (see src/storage.rs and src/launch.rs).
 (function () {
   "use strict";
@@ -44,6 +44,11 @@
         } catch (_) {
           // Nothing to remove when storage is blocked.
         }
+      };
+      // The first frame has been drawn (src/main.rs); web/index.html then
+      // takes down its loading notice.
+      importObject.env.cinderwake_ready = function () {
+        window.dispatchEvent(new Event("cinderwake-ready"));
       };
       importObject.env.cinderwake_storage_write = function (key, keyLen, value, valueLen) {
         try {

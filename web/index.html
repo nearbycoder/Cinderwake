@@ -109,6 +109,7 @@
       if (!(event.error instanceof WebAssembly.RuntimeError)) return;
       if (document.getElementById("stopped")) return;
       state("stopped");
+      loading.remove();
       const note = document.createElement("div");
       note.id = "stopped";
       note.setAttribute("role", "alert");
@@ -189,22 +190,19 @@
         return;
       }
       say("Preparing the city…", "decoding art and sound");
+      // The game says when it has drawn its first frame, once the embedded
+      // art and sound are decoded, which can take a few seconds.
+      window.addEventListener("cinderwake-ready", () => {
+        Object.assign(WebAssembly, watched);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (failed || document.documentElement.dataset.game !== "loading") return;
+          loading.remove();
+          // Keys reach the game without a click first.
+          document.getElementById("glcanvas").focus();
+          state("running");
+        }));
+      }, { once: true });
       load(URL.createObjectURL(file));
-      // The game draws its first frame once embedded art has been decoded.
-      (function hide() {
-        if (failed) return;
-        if (typeof wasm_exports !== "undefined" && wasm_exports) {
-          Object.assign(WebAssembly, watched);
-          requestAnimationFrame(() => requestAnimationFrame(() => {
-            loading.remove();
-            // Keys reach the game without a click first.
-            document.getElementById("glcanvas").focus();
-            if (document.documentElement.dataset.game === "loading") state("running");
-          }));
-        } else {
-          setTimeout(hide, 100);
-        }
-      })();
     })();
   </script>
 </body>
